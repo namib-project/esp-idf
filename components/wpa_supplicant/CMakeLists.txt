@@ -36,6 +36,7 @@ set(srcs "port/os_xtensa.c"
     "src/eap_peer/eap_fast.c"
     "src/eap_peer/eap_fast_common.c"
     "src/eap_peer/eap_fast_pac.c"
+    "src/eap_peer/eap_noob.c"
     "src/rsn_supp/pmksa_cache.c"
     "src/rsn_supp/wpa.c"
     "src/rsn_supp/wpa_ie.c"
@@ -171,7 +172,7 @@ endif()
 idf_component_register(SRCS "${srcs}" ${esp_srcs} "${tls_src}" "${roaming_src}" "${crypto_src}" "${mbo_src}"
                     INCLUDE_DIRS include port/include esp_supplicant/include
                     PRIV_INCLUDE_DIRS src src/utils esp_supplicant/src
-                    PRIV_REQUIRES mbedtls esp_timer)
+                    PRIV_REQUIRES mbedtls esp_timer json)
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wno-strict-aliasing -Wno-write-strings)
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
@@ -184,6 +185,7 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     EAP_TLS
     EAP_PEAP
     EAP_FAST
+    EAP_NOOB
     USE_WPA2_TASK
     CONFIG_WPS2
     CONFIG_WPS_PIN

@@ -47,6 +47,8 @@ extern int g_wpa_pac_file_len;
 
 extern bool g_wpa_suiteb_certification;
 
+extern struct eap_noob_state g_wpa_eap_noob_state;
+
 const u8 * eap_get_eapKeyData(struct eap_sm *sm, size_t *len);
 void eap_deinit_prev_method(struct eap_sm *sm, const char *txt);
 struct wpabuf * eap_sm_build_nak(struct eap_sm *sm, EapType type, u8 id);

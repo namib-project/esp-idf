@@ -246,6 +246,10 @@ esp_err_t esp_wifi_sta_wpa2_ent_set_pac_file(const unsigned char *pac_file, int 
   */
 esp_err_t esp_wifi_sta_wpa2_ent_set_fast_phase1_params(esp_eap_fast_config config);
 
+
+esp_err_t esp_wifi_sta_wpa2_ent_eap_noob_set_initial_association(void);
+esp_err_t esp_wifi_sta_wpa2_ent_eap_noob_set_persistent_association(char *peer_id, int version, int cryptosuite, int cryptosuite_prev, char *nai, uint8_t *kz, uint8_t *kz_prev);
+
 #ifdef __cplusplus
 }
 #endif

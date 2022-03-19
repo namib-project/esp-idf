@@ -1,0 +1,1 @@
+idf_component_register(SRC "wifi_enterprise_noob_main.c" INCLUDE_DIRS ".")

@@ -4,7 +4,7 @@
 
 #include "utils/includes.h"
 
-#ifdef EAP_NOOB
+# TODO: removed ifdef EAP_NOOB. Maybe put it back.
 #include "utils/common.h"
 #include "eap_peer/eap_i.h"
 #include "eap_peer/eap_config.h"
@@ -117,7 +117,15 @@ static struct wpabuf * eap_noob_handle_type_1(struct eap_sm *sm, struct eap_noob
     }
 
     char *return_json = cJSON_Print(ret_json);
-    return wpabuf_alloc_ext_data((u8 *)return_json, strlen(return_json));
+    size_t payload_len = strlen(return_json);
+    u8 *return_bytes = os_zalloc(payload_len + 5);
+    return_bytes[0] = 2; // EAP Response
+    return_bytes[1] = 0; // TODO: EAP-ID. fetch from reqData.
+    return_bytes[2] = (payload_len + 5) >> 8;
+    return_bytes[3] = payload_len + 5;
+    return_bytes[4] = EAP_TYPE_NOOB;
+    memcpy(&return_bytes[5], (u8 *)return_json, payload_len);
+    return wpabuf_alloc_ext_data(return_bytes, payload_len+5);
 }
 static struct wpabuf * eap_noob_handle_type_2(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){ return NULL; }
 static struct wpabuf * eap_noob_handle_type_3(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){ return NULL; }
@@ -241,4 +249,4 @@ eap_peer_noob_register(void)
         eap_peer_method_free(eap);
     return ret;
 }
-#endif /* EAP_NOOB */
+# TODO: add endif if ifdef comes back (ifdef EAP_NOOB)

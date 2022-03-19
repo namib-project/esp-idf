@@ -49,18 +49,20 @@ static void initialize_wifi(void)
 
     wifi_config_t wifi_config = {
         .sta = {
-            .ssid = "eduroam"
+            .ssid = "EAP-NOOB-Janfred"
         }
-    }
+    };
 
     ESP_LOGI(TAG, "Setting WiFi configuration SSID %s...", wifi_config.sta.ssid);
     ESP_ERROR_CHECK( esp_wifi_set_mode(WIFI_MODE_STA) );
     ESP_ERROR_CHECK( esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
     ESP_ERROR_CHECK( esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)"noob@eap-noob.arpa", strlen("noob@eap-noob.arpa")) );
-    ESP_ERROR_CHECK( esp_wifi_sta_wpa2_eap_noob_set_initial_association() );
+    ESP_ERROR_CHECK( esp_wifi_sta_wpa2_ent_eap_noob_set_initial_association() );
+    ESP_ERROR_CHECK( esp_wifi_sta_wpa2_ent_enable() );
+    ESP_ERROR_CHECK( esp_wifi_start() );
 }
 
-tatic void wpa2_enterprise_example_task(void *pvParameters)
+static void wpa2_enterprise_example_task(void *pvParameters)
 {
     esp_netif_ip_info_t ip;
     memset(&ip, 0, sizeof(esp_netif_ip_info_t));
@@ -81,6 +83,7 @@ tatic void wpa2_enterprise_example_task(void *pvParameters)
 
 void app_main(void)
 {
+    esp_log_level_set("*", ESP_LOG_VERBOSE);
     ESP_ERROR_CHECK( nvs_flash_init() );
     initialize_wifi();
     xTaskCreate(&wpa2_enterprise_example_task, "wpa2_enterprise_example_task", 4096, NULL, 5, NULL);

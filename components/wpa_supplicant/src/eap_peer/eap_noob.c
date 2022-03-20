@@ -17,7 +17,8 @@ struct eap_noob_state g_wpa_eap_noob_state;
 
 typedef enum {
         EAP_NOOB_STATE_IDENTITY_SENT,
-        EAP_NOOB_STATE_PEERID_SENT
+        EAP_NOOB_STATE_PEERID_SENT,
+        EAP_NOOB_STATE_VERSION_NEGOTIATION_SENT
     } eap_noob_state;
 
 struct eap_noob_data {
@@ -118,16 +119,114 @@ static struct wpabuf * eap_noob_handle_type_1(struct eap_sm *sm, struct eap_noob
 
     char *return_json = cJSON_Print(ret_json);
     size_t payload_len = strlen(return_json);
-    u8 *return_bytes = os_zalloc(payload_len + 5);
-    return_bytes[0] = 2; // EAP Response
-    return_bytes[1] = 0; // TODO: EAP-ID. fetch from reqData.
-    return_bytes[2] = (payload_len + 5) >> 8;
-    return_bytes[3] = payload_len + 5;
-    return_bytes[4] = EAP_TYPE_NOOB;
-    memcpy(&return_bytes[5], (u8 *)return_json, payload_len);
-    return wpabuf_alloc_ext_data(return_bytes, payload_len+5);
+    struct wpabuf * to_return = eap_msg_alloc(EAP_VENDOR_IETF, EAP_TYPE_NOOB, payload_len, EAP_CODE_RESPONSE, eap_get_id(reqData));
+    wpabuf_put_data(to_return, return_json, payload_len);
+    data->state = EAP_NOOB_STATE_PEERID_SENT;
+    return to_return;
 }
-static struct wpabuf * eap_noob_handle_type_2(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){ return NULL; }
+static struct wpabuf * eap_noob_handle_type_2(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){
+    cJSON *parsed_vers = cJSON_GetObjectItemCaseSensitive(json, "Vers");
+    if(!cJSON_IsArray(parsed_vers)){
+        wpa_printf(MSG_INFO, "EAP-NOOB: Vers was not an array");
+        // TODO send out error.
+        ret->ignore = true;
+        return NULL;
+    }
+    data->vers = (u8 *)cJSON_Print(parsed_vers);
+    data->vers_length = strlen((char *)data->vers);
+    // TODO: Check that version 1 is included
+
+    cJSON *parsed_peerid = cJSON_GetObjectItemCaseSensitive(json, "PeerId");
+    if(!cJSON_IsString(parsed_peerid)){
+        wpa_printf(MSG_INFO, "EAP-NOOB: PeerID was not a string");
+        // TODO send out error
+        ret->ignore = true;
+        return NULL;
+    }
+    size_t len = strlen(parsed_peerid->valuestring);
+    if(data->peer_id == NULL) {
+        wpa_printf(MSG_DEBUG, "EAP-NOOB: New PeerID allocated");
+        data->peer_id = os_zalloc(len+1);
+        memcpy(data->peer_id, parsed_peerid->valuestring, len+1);
+        data->peer_id_length = len;
+    } else {
+        // We already have a PeerId. Check if it matches.
+        if(data->peer_id_length != len || !memcmp(data->peer_id, parsed_peerid->valuestring, len)){
+            wpa_printf(MSG_INFO, "EAP-NOOB: PeerID did not match!");
+            // TODO send out error
+            ret->ignore = true;
+            return NULL;
+        }
+    }
+
+    cJSON *parsed_newnai = cJSON_GetObjectItemCaseSensitive(json, "NewNAI");
+    if(parsed_newnai == NULL){
+        wpa_printf(MSG_DEBUG, "EAP-NOOB: No NewNAI.");
+    } else {
+        if(!cJSON_IsString(parsed_newnai)){
+            wpa_printf(MSG_INFO, "EAP-NOOB: NewNAI was not a string");
+            // TODO send out error
+            ret->ignore = true;
+            return NULL;
+        }
+
+        wpa_printf(MSG_DEBUG, "EAP-NOOB: NewNAI is set. Updating.");
+        if(data->nai)
+          os_free(data->nai);
+        len = strlen(parsed_newnai->valuestring);
+        data->nai = os_zalloc(len+1);
+        memcpy(data->nai, parsed_newnai->valuestring, len+1);
+        data->nai_length = len;
+        // TODO: Update the outer Username for EAP.
+    }
+
+    cJSON *parsed_cryptosuites = cJSON_GetObjectItemCaseSensitive(json, "Cryptosuites");
+    if(!cJSON_IsArray(parsed_cryptosuites)){
+        wpa_printf(MSG_INFO, "EAP-NOOB: Cryptosuites was not an array");
+        // TODO send out error
+        ret->ignore = true;
+        return NULL;
+    }
+    data->cryptosuites = (u8 *)cJSON_Print(parsed_cryptosuites);
+    data->cryptosuites_length = strlen((char *)data->cryptosuites);
+    // TODO: Check the cryptosuites values.
+
+    cJSON *parsed_dirs = cJSON_GetObjectItemCaseSensitive(json, "Dirs");
+    if(!cJSON_IsNumber(parsed_dirs)){
+        wpa_printf(MSG_INFO, "EAP-NOOB: Dirs was not a number");
+        // TODO send out error
+        ret->ignore = true;
+        return NULL;
+    }
+    data->dirs = parsed_dirs->valueint;
+    // TODO: Check if dirs is compatible with our directions.
+
+    cJSON *parsed_serverinfo = cJSON_GetObjectItemCaseSensitive(json, "ServerInfo");
+    if(parsed_serverinfo == NULL){
+        wpa_printf(MSG_INFO, "EAP-NOOB: No ServerInfo supplied");
+        // TODO send out error
+        ret->ignore = true;
+        return NULL;
+    }
+    data->server_info = (u8 *)cJSON_Print(parsed_serverinfo);
+    data->server_info_length = strlen((char *)data->server_info);
+    // TODO: Actually parse ServerInfo.
+
+    cJSON *ret_json = cJSON_CreateObject();
+    cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(2));
+    cJSON_AddItemToObject(ret_json, "Verp", cJSON_CreateNumber(1));
+    cJSON_AddItemToObject(ret_json, "PeerId", cJSON_CreateStringReference(data->peer_id));
+    cJSON_AddItemToObject(ret_json, "Cryptosuitep", cJSON_CreateNumber(1));
+    cJSON_AddItemToObject(ret_json, "Dirp", cJSON_CreateNumber(1)); // Peer-to-server
+    cJSON_AddItemToObject(ret_json, "PeerInfo", cJSON_CreateObject()); // For now PeerInfo is empty. Need to fill it at some point
+
+    char *return_json = cJSON_Print(ret_json);
+    size_t payload_len = strlen(return_json);
+    struct wpabuf *to_return = eap_msg_alloc(EAP_VENDOR_IETF, EAP_TYPE_NOOB, payload_len, EAP_CODE_RESPONSE, eap_get_id(reqData));
+    wpabuf_put_data(to_return, return_json, payload_len);
+    data->state = EAP_NOOB_STATE_VERSION_NEGOTIATION_SENT;
+    return to_return;
+}
 static struct wpabuf * eap_noob_handle_type_3(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){ return NULL; }
 static struct wpabuf * eap_noob_handle_type_4(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){ return NULL; }
 static struct wpabuf * eap_noob_handle_type_5(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){ return NULL; }
@@ -169,6 +268,7 @@ eap_noob_process(struct eap_sm *sm, void *priv, struct eap_method_ret *ret, cons
     switch(type){
         case 1:
             // PeerId and PeerState discovery
+            // TODO: check if the current state is actually "Identity sent"
             return eap_noob_handle_type_1(sm, data, ret, reqData, content);
         case 2:
             // Version, cryptosuite, and parameter negotiation

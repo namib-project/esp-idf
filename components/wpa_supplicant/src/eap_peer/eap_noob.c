@@ -15,6 +15,7 @@
 #include "mbedtls/entropy.h"
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/sha256.h"
+#include "mbedtls/md.h"
 
 struct eap_noob_state g_wpa_eap_noob_state;
 
@@ -22,7 +23,8 @@ typedef enum {
         EAP_NOOB_STATE_IDENTITY_SENT,
         EAP_NOOB_STATE_PEERID_SENT,
         EAP_NOOB_STATE_VERSION_NEGOTIATION_SENT,
-        EAP_NOOB_STATE_PUBKEY_SENT
+        EAP_NOOB_STATE_PUBKEY_SENT,
+        EAP_NOOB_STATE_MACP_SENT
     } eap_noob_state;
 
 struct eap_noob_data {
@@ -63,72 +65,11 @@ struct eap_noob_data {
     u8 kz[32];
     u8 *kdf_out;
     size_t kdf_out_length;
+    u8 macp[32];
+    u8 macs[32];
 };
 
 static void eap_noob_deinit(struct eap_sm *sm, void *priv);
-
-static void eap_noob_save_ephemeral_state(struct eap_noob_data *data){
-    if(g_wpa_eap_noob_state.ephemeral_state)
-        free(g_wpa_eap_noob_state.ephemeral_state);
-    g_wpa_eap_noob_state.ephemeral_state = os_zalloc(sizeof(struct eap_noob_ephemeral_state_info));
-
-    struct eap_noob_ephemeral_state_info *ephemeral =g_wpa_eap_noob_state.ephemeral_state;
-    if(ephemeral->vers)
-        free(ephemeral->vers);
-    ephemeral->vers = os_zalloc(data->vers_length + 1);
-    memcpy(ephemeral->vers, data->vers, data->vers_length + 1);
-
-    ephemeral->verp = data->verp;
-
-    if(ephemeral->peer_id)
-        free(ephemeral->peer_id);
-    ephemeral->peer_id = os_zalloc(data->peer_id_length + 1);
-    memcpy(ephemeral->peer_id, data->peer_id, data->peer_id_length + 1);
-
-    if(ephemeral->cryptosuites)
-        free(ephemeral->cryptosuites);
-    ephemeral->cryptosuites = os_zalloc(data->cryptosuites_length + 1);
-    memcpy(ephemeral->cryptosuites, data->cryptosuites, data->cryptosuites_length + 1);
-
-    if(ephemeral->server_info)
-        free(ephemeral->server_info);
-    ephemeral->server_info = os_zalloc(data->server_info_length + 1);
-    memcpy(ephemeral->server_info, data->server_info, data->server_info_length + 1);
-
-    ephemeral->cryptosuitep = data->cryptosuitep;
-
-    ephemeral->dirp = data->dirp;
-
-    if(ephemeral->nai)
-        free(ephemeral->nai);
-    ephemeral->nai = os_zalloc(data->nai_length + 1);
-    memcpy(ephemeral->nai, data->nai, data->nai_length + 1);
-
-    if(ephemeral->peer_info)
-        free(ephemeral->peer_info);
-    ephemeral->peer_info = os_zalloc(data->peer_info_length + 1);
-    memcpy(ephemeral->peer_info, data->peer_info, data->peer_info_length + 1);
-
-    if(ephemeral->pks)
-        free(ephemeral->pks);
-    ephemeral->pks = os_zalloc(data->pks_length + 1);
-    memcpy(ephemeral->pks, data->pks, data->pks_length + 1);
-
-    if(ephemeral->pkp)
-        free(ephemeral->pkp);
-    ephemeral->pkp = os_zalloc(data->pkp_length + 1);
-    memcpy(ephemeral->pkp, data->pkp, data->pkp_length + 1);
-
-    memcpy(ephemeral->ns, data->ns, 32);
-    memcpy(ephemeral->np, data->np, 32);
-
-    if(ephemeral->shared_secret)
-        free(ephemeral->shared_secret);
-    ephemeral->shared_secret = os_zalloc(data->shared_key_length);
-    memcpy(ephemeral->shared_secret, data->shared_key, data->shared_key_length);
-
-    g_wpa_eap_noob_state.noob_state = 1;
-}
 
 static char *
 eap_noob_generate_hash_src(
@@ -149,7 +90,7 @@ eap_noob_generate_hash_src(
         u8 *pkp,
         u8 *np_b,
         u8 *noob
-        ){
+){
     u8 dir_s[8];
     snprintf((char *)dir_s,8,"%i", dir);
     u8 verp_s[8];
@@ -182,9 +123,9 @@ eap_noob_generate_hash_src(
     size_t noob_len = strlen((char *)noob);
 
     size_t total_length = 28 + dir_s_len + vers_len + verp_s_len + peer_id_len +
-            cryptosuites_len + dirs_s_len + server_info_len + cryptosuitep_s_len +
-            dirp_s_len + nai_len + peer_info_len + keying_mode_s_len + pks_len + ns_len +
-            pkp_len + np_len + noob_len;
+                          cryptosuites_len + dirs_s_len + server_info_len + cryptosuitep_s_len +
+                          dirp_s_len + nai_len + peer_info_len + keying_mode_s_len + pks_len + ns_len +
+                          pkp_len + np_len + noob_len;
 
     char *to_return = os_zalloc(total_length+1);
 
@@ -207,10 +148,148 @@ eap_noob_generate_hash_src(
              pkp,
              np_b,
              noob
-             );
+    );
 
 
     return to_return;
+}
+
+static void eap_noob_calculate_mac(struct eap_noob_data *data){
+    char *macp_src = eap_noob_generate_hash_src(
+            1,
+            data->vers,
+            data->verp,
+            data->peer_id,
+            data->cryptosuites,
+            data->dirs,
+            data->server_info,
+            data->cryptosuitep,
+            data->dirp,
+            data->nai,
+            data->peer_info,
+            0,
+            data->pks,
+            data->ns_b64,
+            data->pkp,
+            data->np_b64,
+            data->noob_b64
+    );
+    char *macs_src = eap_noob_generate_hash_src(
+            2,
+            data->vers,
+            data->verp,
+            data->peer_id,
+            data->cryptosuites,
+            data->dirs,
+            data->server_info,
+            data->cryptosuitep,
+            data->dirp,
+            data->nai,
+            data->peer_info,
+            0,
+            data->pks,
+            data->ns_b64,
+            data->pkp,
+            data->np_b64,
+            data->noob_b64
+    );
+
+    mbedtls_md_context_t macs_ctx;
+    mbedtls_md_context_t macp_ctx;
+
+    mbedtls_md_init(&macs_ctx);
+    mbedtls_md_init(&macp_ctx);
+
+    mbedtls_md_setup(&macs_ctx, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 1);
+    mbedtls_md_setup(&macp_ctx, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 1);
+
+    mbedtls_md_hmac_starts(&macs_ctx, data->kdf_out+224, 32);
+    mbedtls_md_hmac_starts(&macp_ctx, data->kdf_out+256, 32);
+
+    mbedtls_md_hmac_update(&macs_ctx, (u8 *)macs_src, strlen(macs_src));
+    mbedtls_md_hmac_update(&macp_ctx, (u8 *)macp_src, strlen(macp_src));
+
+    mbedtls_md_hmac_finish(&macp_ctx, data->macp);
+    mbedtls_md_hmac_finish(&macs_ctx, data->macs);
+
+    wpa_hexdump(MSG_MSGDUMP, "EAP-NOOB: MACp", data->macp, 32);
+    wpa_hexdump(MSG_MSGDUMP, "EAP-NOOB: MACs", data->macs, 32);
+}
+
+static void eap_noob_calculate_kdf(u8 *out, size_t len, u8 *z, size_t z_len, u8 *party_u_info, u8 *party_v_info, u8 *supp_priv_info, size_t supp_priv_info_len){
+    char *alg_id = "EAP-NOOB";
+    size_t kdf_len = 4 + z_len + 8 + 64 + supp_priv_info_len;
+    u8 *kdf_input = os_zalloc(kdf_len);
+    memcpy(kdf_input+4, z, z_len);
+    memcpy(kdf_input+4+z_len, alg_id, 8);
+    memcpy(kdf_input+4+z_len+8, party_u_info, 32);
+    memcpy(kdf_input+4+z_len+8+32, party_v_info, 32);
+    memcpy(kdf_input+4+z_len+8+64, supp_priv_info, supp_priv_info_len);
+
+
+    size_t curptr = 0;
+    u32 id = 1;
+    u8 kdf_out[32];
+    while(curptr < len){
+        kdf_input[0] = id >> 24;
+        kdf_input[1] = id >> 16;
+        kdf_input[2] = id >> 8;
+        kdf_input[3] = id;
+        id++;
+
+        wpa_hexdump(MSG_MSGDUMP, "EAP-NOOB: KDF Input", kdf_input, kdf_len);
+
+        mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), kdf_input, kdf_len, kdf_out);
+
+        wpa_hexdump(MSG_MSGDUMP, "EAP-NOOB: KDF Output", kdf_out, 32);
+
+        if(curptr+32<=len){
+            memcpy(out + curptr, kdf_out, 32);
+            curptr += 32;
+        } else {
+            memcpy(out + curptr, kdf_out, len-curptr);
+            curptr = len;
+        }
+    }
+    wpa_hexdump(MSG_MSGDUMP, "EAP-NOOB: KDF concat out", out, len);
+}
+static void eap_noob_save_persistent_state(struct eap_noob_data *data){
+    // TODO NOT YET IMPLEMENTED
+}
+static void eap_noob_save_ephemeral_state(struct eap_noob_data *data){
+    if(g_wpa_eap_noob_state.ephemeral_state)
+        free(g_wpa_eap_noob_state.ephemeral_state);
+    g_wpa_eap_noob_state.ephemeral_state = os_zalloc(sizeof(struct eap_noob_ephemeral_state_info));
+
+    struct eap_noob_ephemeral_state_info *ephemeral =g_wpa_eap_noob_state.ephemeral_state;
+    ephemeral->verp = data->verp;
+
+    if(ephemeral->peer_id)
+        free(ephemeral->peer_id);
+    ephemeral->peer_id = os_zalloc(data->peer_id_length + 1);
+    memcpy(ephemeral->peer_id, data->peer_id, data->peer_id_length + 1);
+
+    ephemeral->cryptosuitep = data->cryptosuitep;
+
+    if(ephemeral->nai)
+        free(ephemeral->nai);
+    ephemeral->nai = os_zalloc(data->nai_length + 1);
+    memcpy(ephemeral->nai, data->nai, data->nai_length + 1);
+
+    memcpy(ephemeral->ns, data->ns, 32);
+    memcpy(ephemeral->np, data->np, 32);
+
+    if(ephemeral->shared_secret)
+        free(ephemeral->shared_secret);
+    ephemeral->shared_secret = os_zalloc(data->shared_key_length);
+    memcpy(ephemeral->shared_secret, data->shared_key, data->shared_key_length);
+
+    memcpy(ephemeral->secret_key_base, data->kdf_out, data->kdf_out_length);
+
+    memcpy(ephemeral->macp, data->macp, 32);
+    memcpy(ephemeral->macs, data->macs, 32);
+
+    g_wpa_eap_noob_state.noob_state = 1;
 }
 
 static void eap_noob_calculate_noob(struct eap_noob_data *data){
@@ -244,25 +323,16 @@ static void eap_noob_calculate_noob(struct eap_noob_data *data){
 
     wpa_printf(MSG_INFO, "EAP-NOOB: HOOB source: %s", hoob_src);
 
-    mbedtls_sha256_context hoob_ctx;
-    mbedtls_sha256_init(&hoob_ctx);
-    mbedtls_sha256_starts_ret(&hoob_ctx, 0);
-    mbedtls_sha256_update_ret(&hoob_ctx, (u8 *) hoob_src, strlen(hoob_src));
-
-    free(hoob_src);
 
     u8 hoob[32];
-    mbedtls_sha256_finish_ret(&hoob_ctx, hoob);
+    mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), (u8 *)hoob_src, strlen(hoob_src), hoob);
+    free(hoob_src);
 
     char noobid_input[14+data->noob_b64_length];
     snprintf(noobid_input, 14+data->noob_b64_length, "[\"NoobId\",\"%s\"", data->noob_b64);
 
-
-    mbedtls_sha256_init(&hoob_ctx);
-    mbedtls_sha256_starts_ret(&hoob_ctx, 0);
-    mbedtls_sha256_update_ret(&hoob_ctx, (u8 *) noobid_input, strlen(noobid_input));
     u8 noobid[32];
-    mbedtls_sha256_finish_ret(&hoob_ctx, noobid);
+    mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), (u8 *)noobid_input, strlen(noobid_input), noobid);
 
     size_t hoob_length, noobid_length;
     char *hoob_b = base64_url_encode(hoob, 16, &hoob_length);
@@ -272,6 +342,8 @@ static void eap_noob_calculate_noob(struct eap_noob_data *data){
     wpa_printf(MSG_INFO, "EAP-NOOB: Noob: %s", data->noob_b64);
     wpa_printf(MSG_INFO, "EAP-NOOB: PeerId: %s", data->peer_id);
     wpa_printf(MSG_INFO, "EAP-NOOB: NoobId: %s", noobid_b);
+    wpa_printf(MSG_INFO, "EAP-NOOB: {\"hoob\"=>\"%s\", \"noob\"=>\"%s\", \"peer_id\"=>\"%s\", \"noob_id\"=>\"%s\"}",
+               hoob_b, data->noob_b64, data->peer_id, noobid_b);
 
     free(hoob_b);
     free(noobid_b);
@@ -295,39 +367,47 @@ eap_noob_init(struct eap_sm *sm){
     if(g_wpa_eap_noob_state.ephemeral_state && g_wpa_eap_noob_state.ephemeral_state->nai){
         size_t nailen = strlen(g_wpa_eap_noob_state.ephemeral_state->nai);
         data->nai = os_zalloc(nailen+1);
-        strcpy(data->nai, g_wpa_eap_noob_state.ephemeral_state->nai);
+        memcpy(data->nai, g_wpa_eap_noob_state.ephemeral_state->nai, nailen+1);
         data->nai_length = nailen;
     } else if (g_wpa_eap_noob_state.nai) {
         size_t nailen = strlen(g_wpa_eap_noob_state.nai);
         data->nai = os_zalloc(nailen+1);
-        strcpy(data->nai, g_wpa_eap_noob_state.nai);
+        memcpy(data->nai, g_wpa_eap_noob_state.nai, nailen + 1);
         data->nai_length = nailen;
     } else {
         data->nai = os_zalloc(g_wpa_anonymous_identity_len+1);
         memcpy(data->nai, g_wpa_anonymous_identity, g_wpa_anonymous_identity_len);
+        data->nai[g_wpa_anonymous_identity_len] = 0;
         data->nai_length = g_wpa_anonymous_identity_len;
     }
 
     if(g_wpa_eap_noob_state.ephemeral_state){
-        if(g_wpa_eap_noob_state.ephemeral_state->peer_id) {
-            size_t pid_len = strlen(g_wpa_eap_noob_state.ephemeral_state->peer_id)+1;
-            data->peer_id = os_zalloc(pid_len);
+        if(g_wpa_eap_noob_state.ephemeral_state->peer_id != NULL) {
+            size_t pid_len = strlen(g_wpa_eap_noob_state.ephemeral_state->peer_id);
+            data->peer_id = os_zalloc(pid_len+1);
             if(data->peer_id == NULL){
                 eap_noob_deinit(sm, data);
                 return NULL;
             }
-            memcpy(data->peer_id, g_wpa_eap_noob_state.ephemeral_state->peer_id, pid_len);
+            memcpy(data->peer_id, g_wpa_eap_noob_state.ephemeral_state->peer_id, pid_len+1);
             data->peer_id_length = pid_len;
         }
+
+        memcpy(data->macp, g_wpa_eap_noob_state.ephemeral_state->macp, 32);
+        memcpy(data->macs, g_wpa_eap_noob_state.ephemeral_state->macs, 32);
+
+        data->kdf_out = os_zalloc(320);
+        data->kdf_out_length = 320;
+        memcpy(data->kdf_out, g_wpa_eap_noob_state.ephemeral_state->secret_key_base, 320);
     }
     else if(g_wpa_eap_noob_state.peer_id != NULL){
-        size_t pid_len = strlen(g_wpa_eap_noob_state.peer_id)+1;
-        data->peer_id = os_zalloc(pid_len);
+        size_t pid_len = strlen(g_wpa_eap_noob_state.peer_id);
+        data->peer_id = os_zalloc(pid_len+1);
         if(data->peer_id == NULL){
             eap_noob_deinit(sm, data);
             return NULL;
         }
-        memcpy(data->peer_id, g_wpa_eap_noob_state.peer_id, pid_len);
+        memcpy(data->peer_id, g_wpa_eap_noob_state.peer_id, pid_len+1);
         data->peer_id_length = pid_len;
     }
     return data;
@@ -590,6 +670,7 @@ static struct wpabuf * eap_noob_handle_type_3(struct eap_sm *sm, struct eap_noob
     size_t mykey_b64_len;
     char *mykey_b64 = base64_url_encode(mykey, 32, &mykey_b64_len);
 
+    mbedtls_mpi_lset(&x25519_ctx.Qp.Z, 1);
     ret_val = mbedtls_mpi_read_binary_le( &x25519_ctx.Qp.X, otherpubkey, 32);
     free(otherpubkey);
     ret_val = mbedtls_ecdh_compute_shared( &x25519_ctx.grp, &x25519_ctx.z, &x25519_ctx.Qp, &x25519_ctx.d, mbedtls_ctr_drbg_random, &ctr_drbg );
@@ -600,6 +681,8 @@ static struct wpabuf * eap_noob_handle_type_3(struct eap_sm *sm, struct eap_noob
     data->shared_key = os_zalloc(32);
     memcpy(data->shared_key, sharedkey, 32);
     data->shared_key_length = 32;
+
+    wpa_hexdump(MSG_MSGDUMP, "EAP-NOOB: ECHDE Output:", sharedkey, 32);
 
     // TODO Actually use a random nonce.
     for(int i = 0; i<32; i++){
@@ -636,15 +719,97 @@ static struct wpabuf * eap_noob_handle_type_3(struct eap_sm *sm, struct eap_noob
     data->state = EAP_NOOB_STATE_PUBKEY_SENT;
 
     // Here we have completed the initial exchange.
-    // We now calculate an OOB-Message, save our ephemeral state so we just do reconnect exchanges from now on.
+    // We now calculate an OOB-Message, save our ephemeral state, so we just do reconnect exchanges from now on.
     eap_noob_calculate_noob(data);
-    eap_noob_save_ephemeral_state(data);
 
+    // With the noob value we also have everything to calculate the secret keys
+    if(data->kdf_out)
+        free(data->kdf_out);
+    data->kdf_out = os_zalloc(320);
+    data->kdf_out_length = 320;
+    eap_noob_calculate_kdf(data->kdf_out, 320, sharedkey, 32, data->np, data->ns, data->noob, 16);
+
+    // And with the secret keys we can calculate the MAC values
+    eap_noob_calculate_mac(data);
+
+    eap_noob_save_ephemeral_state(data);
     return to_return;
 }
 static struct wpabuf * eap_noob_handle_type_4(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){ return NULL; }
 static struct wpabuf * eap_noob_handle_type_5(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){ return NULL; }
-static struct wpabuf * eap_noob_handle_type_6(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){ return NULL; }
+static struct wpabuf * eap_noob_handle_type_6(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){
+    cJSON *parsed_peerid = cJSON_GetObjectItemCaseSensitive(json, "PeerId");
+    if(!cJSON_IsString(parsed_peerid)){
+        wpa_printf(MSG_INFO, "EAP-NOOB: PeerID was not a string");
+        // TODO send out error
+        ret->ignore = true;
+        return NULL;
+    }
+    size_t len = strlen(parsed_peerid->valuestring);
+    // We already have a PeerId. Check if it matches.
+    if(data->peer_id_length != len || memcmp(data->peer_id, parsed_peerid->valuestring, len) != 0){
+        wpa_printf(MSG_INFO, "EAP-NOOB: PeerID did not match!");
+        wpa_printf(MSG_INFO, "EAP-NOOB: My PeerId: %s %i, sent PeerId: %s %i", data->peer_id, data->peer_id_length, parsed_peerid->valuestring, len);
+        // TODO send out error
+        ret->ignore = true;
+        return NULL;
+    }
+
+    cJSON *parsed_noobid = cJSON_GetObjectItemCaseSensitive(json, "NoobId");
+    if(!cJSON_IsString(parsed_noobid)){
+        wpa_printf(MSG_INFO, "EAP-NOOB: NoobId was not a string");
+        // TODO send out error
+        ret->ignore = true;
+        return NULL;
+    }
+    // TODO check for the correct noob id. For now we just assume the correct noobid was transmitted
+
+    cJSON *parsed_macs = cJSON_GetObjectItemCaseSensitive(json, "MACs");
+    if(!cJSON_IsString(parsed_macs)){
+        wpa_printf(MSG_INFO, "EAP-NOOB: MACs was not a string");
+        // TODO send out error
+        ret->ignore = true;
+        return NULL;
+    }
+    len = strlen(parsed_macs->valuestring);
+    size_t mac_len;
+    u8 *macs = base64_url_decode(parsed_macs->valuestring, len, &mac_len);
+
+    if(mac_len != 32){
+        wpa_printf(MSG_INFO, "EAP-NOOB: MACs decoded length did not match");
+        // TODO send out error
+        ret->ignore = true;
+        return NULL;
+    }
+    u8 equal = 0;
+    for(int i = 0; i< 32; i++)
+        equal = equal | (data->macs[i] ^ macs[i]);
+    if(equal != 0){
+        wpa_printf(MSG_INFO, "EAP-NOOB: MACs did not match.");
+        wpa_hexdump(MSG_MSGDUMP, "EAP-NOOB: sent MACs", macs, 32);
+        wpa_hexdump(MSG_MSGDUMP, "EAP-NOOB: my MACs", data->macs, 32);
+        // TODO send out error
+        ret->ignore = true;
+        return NULL;
+    }
+
+    char *macp = base64_url_encode(data->macp, 32, &mac_len);
+
+    cJSON *ret_json = cJSON_CreateObject();
+    cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(6));
+    cJSON_AddItemToObject(ret_json, "PeerId", cJSON_CreateStringReference(data->peer_id));
+    cJSON_AddItemToObject(ret_json, "MACp", cJSON_CreateStringReference(macp));
+
+    char *return_json = cJSON_PrintUnformatted(ret_json);
+    size_t payload_len = strlen(return_json);
+    struct wpabuf *to_return = eap_msg_alloc(EAP_VENDOR_IETF, EAP_TYPE_NOOB, payload_len, EAP_CODE_RESPONSE, eap_get_id(reqData));
+    wpabuf_put_data(to_return, return_json, payload_len);
+
+    eap_noob_save_persistent_state(data);
+
+    data->state = EAP_NOOB_STATE_MACP_SENT;
+    return to_return;
+}
 static struct wpabuf * eap_noob_handle_type_7(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){ return NULL; }
 static struct wpabuf * eap_noob_handle_type_8(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){ return NULL; }
 static struct wpabuf * eap_noob_handle_type_9(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){ return NULL; }
@@ -719,19 +884,37 @@ eap_noob_process(struct eap_sm *sm, void *priv, struct eap_method_ret *ret, cons
 static bool
 eap_noob_isKeyAvailable(struct eap_sm *sm, void *priv)
 {
-    return false; // TODO STUB
+    struct eap_noob_data *data = priv;
+    return data->state == EAP_NOOB_STATE_MACP_SENT;
 }
 
 static u8 *
 eap_noob_getKey(struct eap_sm *sm, void *priv, size_t *len)
 {
-    return NULL; // TODO STUB
+    if(!eap_noob_isKeyAvailable(sm, priv)){
+        return NULL;
+    }
+    struct eap_noob_data *data = priv;
+    u8 *msk = malloc(64);
+    memcpy(msk, data->kdf_out, 64);
+    wpa_printf(MSG_INFO, "========================================");
+    wpa_hexdump(MSG_MSGDUMP, "EAP-NOOB: getKey called", data->kdf_out, 64);
+    wpa_printf(MSG_INFO, "========================================");
+    *len = 64;
+    return msk;
 }
 
 static u8 *
 eap_noob_get_emsk(struct eap_sm *sm, void *priv, size_t *len)
 {
-    return NULL; // TODO STUB
+    if(!eap_noob_isKeyAvailable(sm, priv)){
+        return NULL;
+    }
+    struct eap_noob_data *data = priv;
+    u8 *emsk = malloc(64);
+    memcpy(emsk, data->kdf_out + 64, 64);
+    *len = 64;
+    return emsk;
 }
 
 static u8 *

@@ -6,23 +6,21 @@
 #define EAP_NOOB_H
 
 struct eap_noob_ephemeral_state_info {
-    char *vers; //0-byte terminated, formatted as JSON array of integers
     int verp;
     char *peer_id; //0-byte terminated
-    char *cryptosuites; //0-byte terminated, formatted as JSON array of integers
-    char *server_info; //0-byte terminated, formatted as JSON map
     int cryptosuitep;
     int dirp;
     char *nai; //0-byte terminated, simple string
     char *peer_info; //0-byte terminated, formatted as JSON map
     int keying_mode;
-    char *pks; //0-byte terminated, formatted as JSON map
     u8 ns[32];
-    char *pkp; //0-byte terminated, formatted as JSON map
     u8 np[32];
     u8 noob[16];
     u8 *shared_secret;
     size_t shared_secret_length;
+    u8 secret_key_base[320];
+    u8 macp[32];
+    u8 macs[32];
 };
 
 struct eap_noob_state {

@@ -10,6 +10,7 @@
 #include <stdbool.h>
 
 #include "esp_err.h"
+#include "eap_peer/eap_noob.h"
 
 typedef enum {
     ESP_EAP_TTLS_PHASE2_EAP,
@@ -259,6 +260,8 @@ esp_err_t esp_wifi_sta_wpa2_use_default_cert_bundle(bool use_default_bundle);
 
 esp_err_t esp_wifi_sta_wpa2_ent_eap_noob_set_initial_association(void);
 esp_err_t esp_wifi_sta_wpa2_ent_eap_noob_set_persistent_association(char *peer_id, int version, int cryptosuite, int cryptosuite_prev, char *nai, uint8_t *kz, uint8_t *kz_prev);
+eap_noob_oob_msg_t *esp_wifi_sta_wpa2_ent_eap_noob_generate_oob_message(void);
+esp_err_t esp_wifi_sta_wpa2_ent_eap_noob_receive_oob_message(u8 *noob, u8 *hoob);
 
 #ifdef __cplusplus
 }

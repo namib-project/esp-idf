@@ -1220,3 +1220,17 @@ esp_err_t esp_wifi_sta_wpa2_ent_eap_noob_set_persistent_association(char *peer_i
     return ESP_OK;
 }
 
+eap_noob_oob_msg_t *esp_wifi_sta_wpa2_ent_eap_noob_generate_oob_message(void){
+    eap_noob_generate_oob_msg();
+}
+
+esp_err_t esp_wifi_sta_wpa2_ent_eap_noob_receive_oob_message(u8 *noob, u8 *hoob){
+    eap_noob_oob_msg_t *oobmsg = os_zalloc(sizeof(eap_noob_oob_msg_t));
+    memcpy(oobmsg->noob, noob, 16);
+    memcpy(oobmsg->hoob, hoob, 16);
+    if(eap_noob_receive_oob_msg(oobmsg))
+        return ESP_OK;
+    os_free(oobmsg);
+    return ESP_FAIL;
+}
+

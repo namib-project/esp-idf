@@ -329,7 +329,7 @@ static void eap_noob_calculate_noob(struct eap_noob_data *data){
     free(hoob_src);
 
     char noobid_input[14+data->noob_b64_length];
-    snprintf(noobid_input, 14+data->noob_b64_length, "[\"NoobId\",\"%s\"", data->noob_b64);
+    snprintf(noobid_input, 14+data->noob_b64_length, "[\"NoobId\",\"%s\"]", data->noob_b64);
 
     u8 noobid[32];
     mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), (u8 *)noobid_input, strlen(noobid_input), noobid);

@@ -10,7 +10,6 @@
 #include <stdbool.h>
 
 #include "esp_err.h"
-#include "eap_peer/eap_noob.h"
 
 typedef enum {
     ESP_EAP_TTLS_PHASE2_EAP,
@@ -25,6 +24,13 @@ typedef struct {
    int fast_max_pac_list_len;
    bool fast_pac_format_binary;
 } esp_eap_fast_config;
+
+typedef struct eap_noob_oob_msg {
+    unsigned char noob[16];
+    unsigned char noob_id[16];
+    unsigned char hoob[16];
+    unsigned char dir;
+} eap_noob_oob_msg_t;
 
 #ifdef __cplusplus
 extern "C" {
@@ -261,7 +267,7 @@ esp_err_t esp_wifi_sta_wpa2_use_default_cert_bundle(bool use_default_bundle);
 esp_err_t esp_wifi_sta_wpa2_ent_eap_noob_set_initial_association(void);
 esp_err_t esp_wifi_sta_wpa2_ent_eap_noob_set_persistent_association(char *peer_id, int version, int cryptosuite, int cryptosuite_prev, char *nai, uint8_t *kz, uint8_t *kz_prev);
 eap_noob_oob_msg_t *esp_wifi_sta_wpa2_ent_eap_noob_generate_oob_message(void);
-esp_err_t esp_wifi_sta_wpa2_ent_eap_noob_receive_oob_message(u8 *noob, u8 *hoob);
+esp_err_t esp_wifi_sta_wpa2_ent_eap_noob_receive_oob_message(unsigned char *noob, unsigned char *hoob);
 
 #ifdef __cplusplus
 }

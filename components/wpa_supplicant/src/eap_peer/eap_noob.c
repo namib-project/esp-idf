@@ -67,7 +67,7 @@ struct eap_noob_cryptographic_material {
     u8 macp[32];
     u8 macs[32];
 };
-kdf_out
+
 struct eap_noob_data {
     eap_noob_internal_state internal_state;
     char *nai; // String, 0-byte terminated
@@ -99,7 +99,7 @@ static u8 *eap_noob_calculate_hoob(eap_noob_oob_msg_t *oobMsg){
     cJSON *json_vals;
 
     size_t b64len;
-    char *noob_b = base64_url_encode(oobMsg->noob, 16, b64len);
+    char *noob_b = base64_url_encode(oobMsg->noob, 16, &b64len);
 
     json_vals = cJSON_CreateNumber(1);
     char *dir = cJSON_PrintUnformatted(json_vals);
@@ -117,34 +117,33 @@ static u8 *eap_noob_calculate_hoob(eap_noob_oob_msg_t *oobMsg){
     );
 
     u8 hash_out[32];
-    u8 hash_ret = os_zalloc(16);
+    u8 *hash_ret = os_zalloc(16);
     mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), (u8 *)hoob_src, strlen(hoob_src), hash_out);
-    mempcy(hash_ret, hash_out, 16);
+    memcpy(hash_ret, hash_out, 16);
     free(hoob_src);
     return hash_ret;
 }
-static u8 *eap_noob_calculate_noobid(eap_noob_oob_msg_t *oobMsg){
+static void eap_noob_calculate_noobid(eap_noob_oob_msg_t *oobMsg){
 
     size_t b64len;
-    char *noob_b = base64_url_encode(oobMsg->noob, 16, b64len);
+    char *noob_b = base64_url_encode(oobMsg->noob, 16, &b64len);
 
     size_t noobid_src_len = strlen(noob_b) + 11;
     char *noobid_src = os_zalloc(noobid_src_len+1);
     snprintf(noobid_src, noobid_src_len + 1, "[\"NoobId\",%s]", noob_b);
     free(noob_b);
+    u8 hash_out[32];
 
     mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), (u8 *)noobid_src, strlen(noobid_src), hash_out);
     memcpy(oobMsg->noob_id, hash_out, 16);
     free(noobid_src);
 }
 
-static bool eap_noob_receive_oob_msg(eap_noob_oob_msg_t *oobMsg){
+bool eap_noob_receive_oob_msg(eap_noob_oob_msg_t *oobMsg){
     if(g_wpa_eap_noob_state.ephemeral_state == NULL)
         return false;
 
     struct eap_noob_ephemeral_state_info *eph = g_wpa_eap_noob_state.ephemeral_state;
-    size_t b64len;
-    char *noob_b = base64_url_encode(oobMsg->noob, 16, b64len);
 
     u8 *hoob = eap_noob_calculate_hoob(oobMsg);
 
@@ -172,7 +171,7 @@ static bool eap_noob_receive_oob_msg(eap_noob_oob_msg_t *oobMsg){
     return true;
 }
 
-static eap_noob_oob_msg_t *eap_noob_generate_oob_msg(void){
+eap_noob_oob_msg_t *eap_noob_generate_oob_msg(void){
     if(g_wpa_eap_noob_state.ephemeral_state == NULL)
         return NULL;
 
@@ -203,7 +202,7 @@ static eap_noob_oob_msg_t *eap_noob_generate_oob_msg(void){
 
     u8 *hoob = eap_noob_calculate_hoob(oobMsg);
 
-    mempcy(oobMsg->hoob, hoob, 16);
+    memcpy(oobMsg->hoob, hoob, 16);
 
     eap_noob_calculate_noobid(oobMsg);
 
@@ -230,8 +229,8 @@ static void free_ephemeral_state(void){
     if(eph->shared_secret != NULL)
         os_free(eph->shared_secret);
 
-    eap_noob_oob_msg_node_t cur = eph->oobMessages;
-    eap_noob_oob_msg_node_t next = NULL;
+    eap_noob_oob_msg_node_t *cur = eph->oobMessages;
+    eap_noob_oob_msg_node_t *next = NULL;
     while(cur != NULL){
         next = cur->next;
         free(cur->value);
@@ -248,17 +247,17 @@ static char *generate_hash_base(struct eap_noob_data *data, int keyingmode){
     // Add empty string for MAC calculation
     cJSON *emptystr_json = cJSON_CreateString("");
     if(data->dirs == NULL)
-        data->dirs = cJSON_PrintUnformatted(emptystr);
+        data->dirs = cJSON_PrintUnformatted(emptystr_json);
     if(data->server_info == NULL)
-        data->server_info = cJSON_PrintUnformatted(emptystr);
+        data->server_info = cJSON_PrintUnformatted(emptystr_json);
     if(data->dirp == NULL)
-        data->dirp = cJSON_PrintUnformatted(emptystr);
+        data->dirp = cJSON_PrintUnformatted(emptystr_json);
     if(data->peer_info == NULL)
-        data->peer_info = cJSON_PrintUnformatted(emptystr);
+        data->peer_info = cJSON_PrintUnformatted(emptystr_json);
     if(data->pks == NULL)
-        data->pks = cJSON_PrintUnformatted(emptystr);
+        data->pks = cJSON_PrintUnformatted(emptystr_json);
     if(data->pkp == NULL)
-        data->pkp = cJSON_PrintUnformatted(emptystr);
+        data->pkp = cJSON_PrintUnformatted(emptystr_json);
     cJSON_Delete(emptystr_json);
 
     size_t total_length =
@@ -276,7 +275,7 @@ static char *generate_hash_base(struct eap_noob_data *data, int keyingmode){
             strlen(data->pks) +
             strlen(data->ns_b) +
             strlen(data->pkp) +
-            strlen(data->np_) +
+            strlen(data->np_b) +
             16;
 
 
@@ -284,7 +283,7 @@ static char *generate_hash_base(struct eap_noob_data *data, int keyingmode){
     char *to_return = os_zalloc(total_length + 1);
 
     snprintf(to_return, total_length + 1,
-             ",%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
+             ",%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,",
              data->vers,
              data->verp,
              data->peer_id,
@@ -379,23 +378,37 @@ static void eap_noob_calculate_kdf(u8 *out, size_t len, u8 *z, size_t z_len, u8 
         }
     }
 }
-static struct eap_noob_cryptographic_material *eap_noob_calculate_cryptographic_elements(struct eap_noob_data *data, int keyingmode, u8 *kz){
+static struct eap_noob_cryptographic_material *eap_noob_calculate_cryptographic_elements(struct eap_noob_data *data, int keyingmode, u8 *kz) {
 
     if (keyingmode != EAP_NOOB_KEYINGMODE_COMPLETION && kz == NULL)
         return NULL;
 
     struct eap_noob_cryptographic_material *to_return = os_zalloc(sizeof(struct eap_noob_cryptographic_material));
-    if(keyingmode == EAP_NOOB_KEYINGMODE_RECONNECT_WITHOUT_ECDHE || keyingmode == EAP_NOOB_KEYINGMODE_RECONNECT_WITH_ECDHE){
+    if (keyingmode == EAP_NOOB_KEYINGMODE_RECONNECT_WITHOUT_ECDHE ||
+        keyingmode == EAP_NOOB_KEYINGMODE_RECONNECT_WITH_ECDHE) {
         to_return->kdf_len = 288;
     } else {
         to_return->kdf_len = 320;
     }
-    if(keyingmode == EAP_NOOB_KEYINGMODE_COMPLETION)
-        eap_noob_calculate_kdf(to_return->kdf_out, to_return->kdf_len, data->shared_key, data->shared_key_length, data->np, data->ns, data->used_oob_msg->noob, 16);
-    else if(keyingmode == EAP_NOOB_KEYINGMODE_RECONNECT_WITHOUT_ECDHE) {
-        eap_noob_calculate_kdf(to_return->kdf_out, to_return->kdf_len, kz, 32, data->np, data->ns, NULL, 0);
+    char *noob_j;
+    if (keyingmode == EAP_NOOB_KEYINGMODE_COMPLETION) {
+        eap_noob_calculate_kdf(to_return->kdf_out, to_return->kdf_len, data->shared_key, data->shared_key_length,
+                               data->np, data->ns, data->used_oob_msg->noob, 16);
+        size_t b64;
+        char *noob_b = base64_url_encode(data->used_oob_msg->noob, 16, &b64);
+        cJSON *noob_json = cJSON_CreateString(noob_b);
+        noob_j = cJSON_PrintUnformatted(noob_json);
+        cJSON_Delete(noob_json);
     } else {
-        eap_noob_calculate_kdf(to_return->kdf_out, to_return->kdf_len, data->shared_key, data->shared_key_length, data->np, data->ns, kz, 32)
+        cJSON *noob_json = cJSON_CreateString("");
+        noob_j = cJSON_PrintUnformatted(noob_json);
+        cJSON_Delete(noob_json);
+        if (keyingmode == EAP_NOOB_KEYINGMODE_RECONNECT_WITHOUT_ECDHE) {
+            eap_noob_calculate_kdf(to_return->kdf_out, to_return->kdf_len, kz, 32, data->np, data->ns, NULL, 0);
+        } else {
+            eap_noob_calculate_kdf(to_return->kdf_out, to_return->kdf_len, data->shared_key, data->shared_key_length,
+                                   data->np, data->ns, kz, 32);
+        }
     }
 
     // MSK: 0-63
@@ -406,8 +419,16 @@ static struct eap_noob_cryptographic_material *eap_noob_calculate_cryptographic_
     // Kmp: 256-287
     // Kz: 288-319 (only Completion/reconnect with version negotiation)
 
-    mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), to_return->kdf_out + 224, 32, kms_input, strlen(kms_input), to_return->macs);
-    mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), to_return->kdf_out + 256, 32, kmp_input, strlen(kmp_input), to_return->macp);
+    size_t km_input_len = strlen(g_wpa_eap_noob_state.ephemeral_state->hash_base_string) + 3 + strlen(noob_j);
+    char *kms_input = os_zalloc(km_input_len + 1);
+    char *kmp_input = os_zalloc(km_input_len + 1);
+
+    snprintf(kms_input, km_input_len + 1, "[2%s%s]", g_wpa_eap_noob_state.ephemeral_state->hash_base_string, noob_j);
+    snprintf(kmp_input, km_input_len + 1, "[1%s%s]", g_wpa_eap_noob_state.ephemeral_state->hash_base_string, noob_j);
+
+
+    mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), to_return->kdf_out + 224, 32, (u8 *)kms_input, km_input_len, to_return->macs);
+    mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), to_return->kdf_out + 256, 32, (u8 *)kmp_input, km_input_len, to_return->macp);
 
     return to_return;
 }
@@ -497,7 +518,7 @@ static struct wpabuf * eap_noob_handle_type_2(struct eap_sm *sm, struct eap_noob
 
     cJSON *parsed_newnai = cJSON_GetObjectItemCaseSensitive(json, "NewNAI");
     if(parsed_newnai == NULL){
-        wpaprintf(MSG_DEBUG, "EAP-NOOB: No NewNAI");
+        wpa_printf(MSG_DEBUG, "EAP-NOOB: No NewNAI");
     } else {
         if(!cJSON_IsString(parsed_newnai)){
             wpa_printf(MSG_INFO, "EAP-NOOB: NewNAI was not a string");
@@ -700,7 +721,7 @@ static struct wpabuf * eap_noob_handle_type_3(struct eap_sm *sm, struct eap_noob
     data->pkp = cJSON_PrintUnformatted(ret_pkp);
 
     cJSON *ret_np = cJSON_CreateString(np_b);
-    data->np_b = cJSON_PrintUnformatted(np_b);
+    data->np_b = cJSON_PrintUnformatted(ret_np);
     cJSON_AddItemToObject(ret_json, "Np", ret_np);
     //</editor-fold>
 
@@ -836,14 +857,14 @@ static struct wpabuf * eap_noob_handle_type_6(struct eap_sm *sm, struct eap_noob
     //</editor-fold>
 
     data->cryptokeys = eap_noob_calculate_cryptographic_elements(data, EAP_NOOB_KEYINGMODE_COMPLETION, NULL);
-    u8 mac_check;
+    u8 mac_check = 0;
     for(size_t i = 0; i<32; i++)
         mac_check |= macs[i] ^ data->cryptokeys->macs[i];
 
     os_free(macs);
 
     if(mac_check != 0){
-        wpa_printf(MSG_INFO: "EAP-NOOB: MACs did not match.");
+        wpa_printf(MSG_INFO, "EAP-NOOB: MACs did not match.");
         return build_error_msg(reqData, EAP_NOOB_ERROR_HMAC_VERIFICATION_FAILURE);
     }
 
@@ -863,7 +884,7 @@ static struct wpabuf * eap_noob_handle_type_6(struct eap_sm *sm, struct eap_noob
 
     cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(6));
     cJSON_AddItemToObject(ret_json, "PeerId", cJSON_CreateStringReference(data->peer_id));
-    cJSON_AddItemToOBject(ret_json, "MACp", cJSON_CreateString(macp_base64));
+    cJSON_AddItemToObject(ret_json, "MACp", cJSON_CreateString(macp_base64));
     //</editor-fold>
 
     //<editor-fold desc="Build response wpabuf packet">
@@ -883,6 +904,7 @@ static struct wpabuf * eap_noob_handle_type_7(struct eap_sm *sm, struct eap_noob
 static struct wpabuf * eap_noob_handle_type_8(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){ return NULL; }
 static struct wpabuf * eap_noob_handle_type_9(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){ return NULL; }
 
+static void eap_noob_deinit(struct eap_sm *sm, void *priv);
 static void *eap_noob_init(struct eap_sm *sm){
     // IF the global eap_noob state is not in active mode, we won't try to do EAP-NOOB.
     if(!g_wpa_eap_noob_state.active)
@@ -915,7 +937,7 @@ static void *eap_noob_init(struct eap_sm *sm){
     return data;
 }
 static void eap_noob_deinit(struct eap_sm *sm, void *priv){
-    struct eap_noob_data *data;
+    struct eap_noob_data *data = priv;
     if (data == NULL)
         return;
 
@@ -975,7 +997,7 @@ static void eap_noob_deinit(struct eap_sm *sm, void *priv){
 }
 static struct wpabuf *eap_noob_process(struct eap_sm *sm, void *priv, struct eap_method_ret *ret, const struct wpabuf *reqData){
     size_t len;
-    struct eap_noob_data *data = *priv;
+    struct eap_noob_data *data = priv;
     const u8 *eap_pkt = eap_hdr_validate(EAP_VENDOR_IETF, EAP_TYPE_NOOB, reqData, &len);
 
     cJSON *recvContent;
@@ -1015,6 +1037,7 @@ static struct wpabuf *eap_noob_process(struct eap_sm *sm, void *priv, struct eap
             } else {
                 to_return = eap_noob_handle_type_1(sm, data, ret, reqData, recvContent);
             }
+            break;
         case 2:
             // Version, cryptosuite, and parameter negotiation
             if (g_wpa_eap_noob_state.noob_state == EAP_NOOB_STATE_REGISTERED ||
@@ -1026,6 +1049,7 @@ static struct wpabuf *eap_noob_process(struct eap_sm *sm, void *priv, struct eap
             } else {
                 to_return = eap_noob_handle_type_2(sm, data, ret, reqData, recvContent);
             }
+            break;
         case 3:
             // Exchange of ECDHE keys and nonces
             if (data->internal_state != EAP_NOOB_STATE_INTERNAL_VERSION_NEGOTIATION_SENT) {
@@ -1033,6 +1057,7 @@ static struct wpabuf *eap_noob_process(struct eap_sm *sm, void *priv, struct eap
             } else {
                 to_return = eap_noob_handle_type_3(sm, data, ret, reqData, recvContent);
             }
+            break;
         case 4:
             // Indication to the peer that the server has not yet received an OOB message
             if (g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_WAITING_FOR_OOB &&
@@ -1044,6 +1069,7 @@ static struct wpabuf *eap_noob_process(struct eap_sm *sm, void *priv, struct eap
             } else {
                 to_return = eap_noob_handle_type_4(sm, data, ret, reqData, recvContent);
             }
+            break;
         case 5:
             // NoobId discovery
             if (g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_WAITING_FOR_OOB &&
@@ -1055,6 +1081,7 @@ static struct wpabuf *eap_noob_process(struct eap_sm *sm, void *priv, struct eap
             } else {
                 to_return = eap_noob_handle_type_5(sm, data, ret, reqData, recvContent);
             }
+            break;
         case 6:
             // Authentication and key confirmation with HMAC
             if (g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_WAITING_FOR_OOB &&
@@ -1068,6 +1095,7 @@ static struct wpabuf *eap_noob_process(struct eap_sm *sm, void *priv, struct eap
             } else {
                 to_return = eap_noob_handle_type_6(sm, data, ret, reqData, recvContent);
             }
+            break;
         case 7:
             // Version, cryptosuite, and parameter negotiation
             if (g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_REGISTERED &&
@@ -1079,13 +1107,16 @@ static struct wpabuf *eap_noob_process(struct eap_sm *sm, void *priv, struct eap
             } else {
                 to_return = eap_noob_handle_type_7(sm, data, ret, reqData, recvContent);
             }
+            break;
         case 8:
             // Exchange of ECDHE keys and nonces
             to_return = eap_noob_handle_type_8(sm, data, ret, reqData, recvContent);
+            break;
         case 9:
             // Authentication and key confirmation with HMAC
             to_return = eap_noob_handle_type_9(sm, data, ret, reqData, recvContent);
-        else:
+            break;
+        default:
             // Unknown message type.
             to_return = build_error_msg(reqData, EAP_NOOB_ERROR_UNEXPECTED_MESSAGE_TYPE);
     }
@@ -1138,6 +1169,7 @@ int eap_peer_noob_register(void){
     eap->deinit = eap_noob_deinit;
     eap->process = eap_noob_process;
     eap->isKeyAvailable = eap_noob_isKeyAvailable;
+    eap->getKey = eap_noob_getKey;
     eap->get_emsk = eap_noob_get_emsk;
 
     ret = eap_peer_method_register(eap);

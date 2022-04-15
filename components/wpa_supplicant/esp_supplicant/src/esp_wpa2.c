@@ -1212,7 +1212,6 @@ esp_err_t esp_wifi_sta_wpa2_ent_eap_noob_set_initial_association(void) {
     if(g_wpa_eap_noob_state.ephemeral_state == NULL){
         return ESP_ERR_NO_MEM;
     }
-    g_wpa_eap_noob_state.ephemeral_state->keying_mode = 0;
 
     return ESP_OK;
 }
@@ -1221,7 +1220,7 @@ esp_err_t esp_wifi_sta_wpa2_ent_eap_noob_set_persistent_association(char *peer_i
 }
 
 eap_noob_oob_msg_t *esp_wifi_sta_wpa2_ent_eap_noob_generate_oob_message(void){
-    eap_noob_generate_oob_msg();
+    return eap_noob_generate_oob_msg();
 }
 
 esp_err_t esp_wifi_sta_wpa2_ent_eap_noob_receive_oob_message(u8 *noob, u8 *hoob){

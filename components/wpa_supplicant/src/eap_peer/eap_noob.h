@@ -19,13 +19,6 @@ enum {
     EAP_NOOB_OOB_DIRECTION_BOTH = EAP_NOOB_OOB_DIRECTION_PEER_TO_SERVER ^ EAP_NOOB_OOB_DIRECTION_SERVER_TO_PEER
 };
 
-typedef struct eap_noob_oob_msg {
-    u8 noob[16];
-    u8 noob_id[16];
-    u8 hoob[16];
-    u8 dir;
-} eap_noob_oob_msg_t;
-
 typedef struct eap_noob_oob_msg_node {
     struct eap_noob_oob_msg *value;
     struct eap_noob_oob_msg_node *next;
@@ -55,14 +48,7 @@ struct eap_noob_state {
     struct eap_noob_ephemeral_state_info *ephemeral_state;
 };
 
-static void *eap_noob_init(struct eap_sm *sm);
-static void eap_noob_deinit(struct eap_sm *sm, void *priv);
-static struct wpabuf *eap_noob_process(struct eap_sm *sm, void *priv, struct eap_method_ret *ret, const struct wpabuf *reqData);
-static bool eap_noob_isKeyAvailable(struct eap_sm *sm, void *priv);
-static u8 *eap_noob_getKey(struct eap_sm *sm, void *priv, size_t *len);
-static u8 *eap_noob_get_emsk(struct eap_sm *sm, void *priv, size_t *len);
-
-static bool eap_noob_receive_oob_msg(eap_noob_oob_msg_t *oobMsg);
-static eap_noob_oob_msg_t *eap_noob_generate_oob_msg(void);
+bool eap_noob_receive_oob_msg(eap_noob_oob_msg_t *oobMsg);
+eap_noob_oob_msg_t *eap_noob_generate_oob_msg(void);
 
 #endif /* EAP_NOOB_H */

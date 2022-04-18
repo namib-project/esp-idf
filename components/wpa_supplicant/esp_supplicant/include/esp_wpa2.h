@@ -19,6 +19,13 @@ typedef enum {
     ESP_EAP_TTLS_PHASE2_CHAP
 } esp_eap_ttls_phase2_types;
 
+
+enum {
+    EAP_NOOB_OOB_DIRECTION_PEER_TO_SERVER = 1,
+    EAP_NOOB_OOB_DIRECTION_SERVER_TO_PEER = 2,
+    EAP_NOOB_OOB_DIRECTION_BOTH = EAP_NOOB_OOB_DIRECTION_PEER_TO_SERVER ^ EAP_NOOB_OOB_DIRECTION_SERVER_TO_PEER
+};
+
 typedef struct {
    int fast_provisioning;
    int fast_max_pac_list_len;
@@ -268,6 +275,9 @@ esp_err_t esp_wifi_sta_wpa2_ent_eap_noob_set_initial_association(void);
 esp_err_t esp_wifi_sta_wpa2_ent_eap_noob_set_persistent_association(char *peer_id, int version, int cryptosuite, int cryptosuite_prev, char *nai, uint8_t *kz, uint8_t *kz_prev);
 eap_noob_oob_msg_t *esp_wifi_sta_wpa2_ent_eap_noob_generate_oob_message(void);
 esp_err_t esp_wifi_sta_wpa2_ent_eap_noob_receive_oob_message(unsigned char *noob, unsigned char *hoob);
+esp_err_t esp_wifi_sta_wpa2_ent_eap_noob_set_oob_dir(unsigned char oob_dir);
+char *esp_wifi_sta_wpa2_ent_eap_noob_get_peerid(void);
+bool esp_wifi_sta_wpa2_ent_eap_noob_oob_pending(void);
 
 #ifdef __cplusplus
 }

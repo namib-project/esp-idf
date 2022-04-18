@@ -106,7 +106,7 @@ static u8 *eap_noob_calculate_hoob(eap_noob_oob_msg_t *oobMsg){
     cJSON_Delete(json_vals);
     json_vals = cJSON_CreateString(noob_b);
     char *noob = cJSON_PrintUnformatted(json_vals);
-    cJSON_Delete(json_vals);
+    cJSON_Delete(json_vals); // Also frees noob_b
 
     size_t hoob_src_len = strlen(eph->hash_base_string) + strlen(dir) + strlen(noob) + 2;
     char *hoob_src = os_zalloc(hoob_src_len+1);
@@ -116,6 +116,7 @@ static u8 *eap_noob_calculate_hoob(eap_noob_oob_msg_t *oobMsg){
              noob
     );
 
+    wpa_printf(MSG_INFO, "HOOB Input: %s", hoob_src);
     u8 hash_out[32];
     u8 *hash_ret = os_zalloc(16);
     mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), (u8 *)hoob_src, strlen(hoob_src), hash_out);
@@ -198,7 +199,7 @@ eap_noob_oob_msg_t *eap_noob_generate_oob_msg(void){
 
     struct eap_noob_ephemeral_state_info *eph = g_wpa_eap_noob_state.ephemeral_state;
 
-    oobMsg->dir = 1;
+    oobMsg->dir = EAP_NOOB_OOB_DIRECTION_PEER_TO_SERVER;
 
     u8 *hoob = eap_noob_calculate_hoob(oobMsg);
 
@@ -276,14 +277,14 @@ static char *generate_hash_base(struct eap_noob_data *data, int keyingmode){
             strlen(data->ns_b) +
             strlen(data->pkp) +
             strlen(data->np_b) +
-            16;
+            20;
 
 
 
     char *to_return = os_zalloc(total_length + 1);
 
     snprintf(to_return, total_length + 1,
-             ",%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,",
+             ",%s,%s,\"%s\",%s,%s,%s,%s,%s,\"%s\",%s,%s,%s,%s,%s,%s,",
              data->vers,
              data->verp,
              data->peer_id,
@@ -316,6 +317,12 @@ static void eap_noob_save_ephemeral_state(struct eap_noob_data *data, int keying
 
     memcpy(eph->np, data->np, 32);
     memcpy(eph->ns, data->ns, 32);
+
+    if(g_wpa_eap_noob_state.peer_id != NULL)
+        os_free(g_wpa_eap_noob_state.peer_id);
+    size_t len = strlen(data->peer_id);
+    g_wpa_eap_noob_state.peer_id = os_zalloc(len+1);
+    memcpy(g_wpa_eap_noob_state.peer_id, data->peer_id, len+1);
 
     eph->hash_base_string = generate_hash_base(data, keyingmode);
     g_wpa_eap_noob_state.noob_state = EAP_NOOB_STATE_WAITING_FOR_OOB;
@@ -377,6 +384,7 @@ static void eap_noob_calculate_kdf(u8 *out, size_t len, u8 *z, size_t z_len, u8 
             curptr = len;
         }
     }
+
 }
 static struct eap_noob_cryptographic_material *eap_noob_calculate_cryptographic_elements(struct eap_noob_data *data, int keyingmode, u8 *kz) {
 
@@ -719,6 +727,7 @@ static struct wpabuf * eap_noob_handle_type_3(struct eap_sm *sm, struct eap_noob
     cJSON_AddItemToObject(ret_pkp, "crv", cJSON_CreateString("X25519"));
     cJSON_AddItemToObject(ret_pkp, "x", cJSON_CreateString(mykey_b64));
     data->pkp = cJSON_PrintUnformatted(ret_pkp);
+    cJSON_AddItemToObject(ret_json, "PKp", ret_pkp);
 
     cJSON *ret_np = cJSON_CreateString(np_b);
     data->np_b = cJSON_PrintUnformatted(ret_np);
@@ -934,6 +943,17 @@ static void *eap_noob_init(struct eap_sm *sm){
         }
         strcpy(data->peer_id, g_wpa_eap_noob_state.peer_id);
     }
+
+    if(g_wpa_eap_noob_state.ephemeral_state != NULL){
+        if(g_wpa_eap_noob_state.ephemeral_state->shared_secret != NULL) {
+            data->shared_key_length = g_wpa_eap_noob_state.ephemeral_state->shared_secret_length;
+            data->shared_key = os_zalloc(data->shared_key_length);
+            memcpy(data->shared_key, g_wpa_eap_noob_state.ephemeral_state->shared_secret, data->shared_key_length);
+        }
+        memcpy(data->np, g_wpa_eap_noob_state.ephemeral_state->np, 32);
+        memcpy(data->ns, g_wpa_eap_noob_state.ephemeral_state->ns, 32);
+    }
+
     return data;
 }
 static void eap_noob_deinit(struct eap_sm *sm, void *priv){

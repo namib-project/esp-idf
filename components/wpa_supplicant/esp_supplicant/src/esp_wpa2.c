@@ -1209,6 +1209,7 @@ esp_err_t esp_wifi_sta_wpa2_ent_eap_noob_set_initial_association(void) {
     g_wpa_eap_noob_state.persistent = false;
     g_wpa_eap_noob_state.noob_state = 0;
     g_wpa_eap_noob_state.ephemeral_state = (struct eap_noob_ephemeral_state_info *)os_zalloc(sizeof(struct eap_noob_ephemeral_state_info));
+    g_wpa_eap_noob_state.supported_dir = EAP_NOOB_OOB_DIRECTION_SERVER_TO_PEER;
     if(g_wpa_eap_noob_state.ephemeral_state == NULL){
         return ESP_ERR_NO_MEM;
     }
@@ -1231,5 +1232,25 @@ esp_err_t esp_wifi_sta_wpa2_ent_eap_noob_receive_oob_message(u8 *noob, u8 *hoob)
         return ESP_OK;
     os_free(oobmsg);
     return ESP_FAIL;
+}
+
+
+esp_err_t esp_wifi_sta_wpa2_ent_eap_noob_set_oob_dir(unsigned char oob_dir){
+    g_wpa_eap_noob_state.supported_dir = oob_dir;
+    return ESP_OK;
+}
+
+
+char *esp_wifi_sta_wpa2_ent_eap_noob_get_peerid(void) {
+    return g_wpa_eap_noob_state.peer_id;
+}
+
+bool esp_wifi_sta_wpa2_ent_eap_noob_oob_pending(void){
+    if(g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_WAITING_FOR_OOB)
+        return false;
+    if(g_wpa_eap_noob_state.ephemeral_state == NULL)
+        return false;
+
+    return g_wpa_eap_noob_state.ephemeral_state->oobMessages == NULL;
 }
 

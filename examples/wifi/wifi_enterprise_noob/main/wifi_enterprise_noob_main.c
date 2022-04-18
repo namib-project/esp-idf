@@ -58,6 +58,7 @@ static void initialize_wifi(void)
     ESP_ERROR_CHECK( esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
     ESP_ERROR_CHECK( esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)"noob@eap-noob.arpa", strlen("noob@eap-noob.arpa")) );
     ESP_ERROR_CHECK( esp_wifi_sta_wpa2_ent_eap_noob_set_initial_association() );
+    ESP_ERROR_CHECK( esp_wifi_sta_wpa2_ent_eap_noob_set_oob_dir(EAP_NOOB_OOB_DIRECTION_BOTH));
     ESP_ERROR_CHECK( esp_wifi_sta_wpa2_ent_enable() );
     ESP_ERROR_CHECK( esp_wifi_start() );
 }
@@ -70,6 +71,26 @@ static void wpa2_enterprise_example_task(void *pvParameters)
 
     while (1) {
         vTaskDelay(2000 / portTICK_PERIOD_MS);
+
+        if( esp_wifi_sta_wpa2_ent_eap_noob_oob_pending() ){
+            eap_noob_oob_msg_t *oobmsg = esp_wifi_sta_wpa2_ent_eap_noob_generate_oob_message();
+            char *hoob_str = malloc(33);
+            char *noob_str = malloc(33);
+            char *noobid_str = malloc(33);
+
+            for(int i = 0;i<16; i++) {
+                snprintf(hoob_str + i * 2, 3, "%02x", oobmsg->hoob[i]);
+                snprintf(noob_str + i*2, 3, "%02x", oobmsg->noob[i]);
+                snprintf(noobid_str + i*2, 3, "%02x", oobmsg->noob_id[i]);
+            }
+
+
+            ESP_LOGI(TAG, "OOBMsg");
+            ESP_LOGI(TAG, "Hoob: %s", hoob_str);
+            ESP_LOGI(TAG, "Noob: %s", noob_str);
+            ESP_LOGI(TAG, "NoobId: %s", noobid_str);
+            ESP_LOGI(TAG, "PeerId: %s", esp_wifi_sta_wpa2_ent_eap_noob_get_peerid());
+        }
 
         if (esp_netif_get_ip_info(sta_netif, &ip) == 0) {
             ESP_LOGI(TAG, "~~~~~~~~~~~");

@@ -680,17 +680,19 @@ static struct wpabuf * eap_noob_handle_type_3(struct eap_sm *sm, struct eap_noob
     unsigned char mykey[32];
     unsigned char sharedkey[32];
 
+    mbedtls_ecdh_context_mbed *x25519_ctx_m = &x25519_ctx.MBEDTLS_PRIVATE(ctx).MBEDTLS_PRIVATE(mbed_ecdh);
+
     const char *mbed_seed = "ecdh";
     ret_val = mbedtls_ctr_drbg_seed( &ctr_drbg, mbedtls_entropy_func, &entropy, (unsigned char *)mbed_seed, 4);
     if(ret_val != 0)
         return build_error_msg(reqData, EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR);
-    ret_val = mbedtls_ecp_group_load( &x25519_ctx.grp, MBEDTLS_ECP_DP_CURVE25519 );
+    ret_val = mbedtls_ecp_group_load( &x25519_ctx_m->MBEDTLS_PRIVATE(grp), MBEDTLS_ECP_DP_CURVE25519 );
     if(ret_val != 0)
         return build_error_msg(reqData, EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR);
-    ret_val = mbedtls_ecdh_gen_public( &x25519_ctx.grp, &x25519_ctx.d, &x25519_ctx.Q, mbedtls_ctr_drbg_random, &ctr_drbg );
+    ret_val = mbedtls_ecdh_gen_public( &x25519_ctx_m->MBEDTLS_PRIVATE(grp), &x25519_ctx_m->MBEDTLS_PRIVATE(d), &x25519_ctx_m->MBEDTLS_PRIVATE(Q), mbedtls_ctr_drbg_random, &ctr_drbg );
     if(ret_val != 0)
         return build_error_msg(reqData, EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR);
-    ret_val = mbedtls_mpi_write_binary_le( &x25519_ctx.Q.X, mykey, 32);
+    ret_val = mbedtls_mpi_write_binary_le( &x25519_ctx_m->MBEDTLS_PRIVATE(Q).MBEDTLS_PRIVATE(X), mykey, 32);
     if(ret_val != 0)
         return build_error_msg(reqData, EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR);
 
@@ -698,12 +700,12 @@ static struct wpabuf * eap_noob_handle_type_3(struct eap_sm *sm, struct eap_noob
     size_t mykey_b64_len;
     char *mykey_b64 = base64_url_encode(mykey, 32, &mykey_b64_len);
 
-    mbedtls_mpi_lset(&x25519_ctx.Qp.Z, 1);
-    ret_val = mbedtls_mpi_read_binary_le( &x25519_ctx.Qp.X, otherpubkey, 32);
-    ret_val = mbedtls_ecdh_compute_shared( &x25519_ctx.grp, &x25519_ctx.z, &x25519_ctx.Qp, &x25519_ctx.d, mbedtls_ctr_drbg_random, &ctr_drbg );
+    mbedtls_mpi_lset(&x25519_ctx_m->MBEDTLS_PRIVATE(Qp).MBEDTLS_PRIVATE(Z), 1);
+    ret_val = mbedtls_mpi_read_binary_le( &x25519_ctx_m->MBEDTLS_PRIVATE(Qp).MBEDTLS_PRIVATE(X), otherpubkey, 32);
+    ret_val = mbedtls_ecdh_compute_shared( &x25519_ctx_m->MBEDTLS_PRIVATE(grp), &x25519_ctx_m->MBEDTLS_PRIVATE(z), &x25519_ctx_m->MBEDTLS_PRIVATE(Qp), &x25519_ctx_m->MBEDTLS_PRIVATE(d), mbedtls_ctr_drbg_random, &ctr_drbg );
     if(ret_val != 0)
         return build_error_msg(reqData, EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR);
-    ret_val = mbedtls_mpi_write_binary_le( &x25519_ctx.z, sharedkey, 32);
+    ret_val = mbedtls_mpi_write_binary_le( &x25519_ctx_m->MBEDTLS_PRIVATE(z), sharedkey, 32);
     if(ret_val != 0)
         return build_error_msg(reqData, EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR);
 

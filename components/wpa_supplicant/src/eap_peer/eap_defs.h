@@ -65,7 +65,11 @@ typedef enum {
 	EAP_TYPE_GPSK = 51 /* RFC 5433 */,
 	EAP_TYPE_PWD = 52 /* RFC 5931 */,
 	EAP_TYPE_EKE = 53 /* RFC 6124 */,
-	EAP_TYPE_EXPANDED = 254 /* RFC 3748 */
+	EAP_TYPE_EXPANDED = 254 /* RFC 3748 */,
+    EAP_TYPE_UTE = 255 /* draft-rieckers-emu-eap-ute-00
+                                               * This is the value for "Experimental"
+                                               * For now, IANA has not issued a number for
+                                               * this EAP-Method. To implement it, the experimental EAP-Type is used. */
 } EapType;
 
 

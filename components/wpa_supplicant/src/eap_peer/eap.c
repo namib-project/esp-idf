@@ -311,6 +311,11 @@ int eap_peer_register_methods(void)
 		ret = eap_peer_ttls_register();
 #endif
 
+#ifdef EAP_UTE
+    if (ret == 0)
+        ret = eap_peer_ute_register();
+#endif
+
 	return ret;
 }
 
@@ -612,6 +617,10 @@ int eap_peer_config_init(
 			//set EAP-TTLS
 			config_methods[allowed_method_count].vendor = EAP_VENDOR_IETF;
 			config_methods[allowed_method_count++].method = EAP_TYPE_TTLS;
+            // set EAP-UTE
+            // TODO this must be adjusted so that PEAP/TTLS are not in the allowed methods if no password is supplied
+            config_methods[allowed_method_count].vendor = EAP_VENDOR_IETF;
+            config_methods[allowed_method_count++].method = EAP_TYPE_UTE;
 		}
 		if (g_wpa_private_key) {
 			//set EAP-TLS

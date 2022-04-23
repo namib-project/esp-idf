@@ -37,6 +37,7 @@ set(srcs "port/os_xtensa.c"
     "src/eap_peer/eap_fast.c"
     "src/eap_peer/eap_fast_common.c"
     "src/eap_peer/eap_fast_pac.c"
+    "src/eap_peer/eap_ute.c"
     "src/rsn_supp/pmksa_cache.c"
     "src/rsn_supp/wpa.c"
     "src/rsn_supp/wpa_ie.c"
@@ -192,6 +193,7 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     EAP_TTLS
     EAP_TLS
     EAP_PEAP
+    EAP_UTE
     USE_WPA2_TASK
     CONFIG_WPS2
     CONFIG_WPS_PIN

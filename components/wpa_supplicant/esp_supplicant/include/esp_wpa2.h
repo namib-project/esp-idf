@@ -19,11 +19,23 @@ typedef enum {
     ESP_EAP_TTLS_PHASE2_CHAP
 } esp_eap_ttls_phase2_types;
 
+typedef enum {
+    EAP_UTE_OOB_DIRECTION_PEER_TO_SERVER = 1,
+    EAP_UTE_OOB_DIRECTION_SERVER_TO_PEER = 2,
+    EAP_UTE_OOB_DIRECTION_BOTH = EAP_UTE_OOB_DIRECTION_PEER_TO_SERVER ^ EAP_UTE_OOB_DIRECTION_SERVER_TO_PEER
+} esp_eap_ute_oob_direction;
+
 typedef struct {
    int fast_provisioning;
    int fast_max_pac_list_len;
    bool fast_pac_format_binary;
 } esp_eap_fast_config;
+
+typedef struct esp_eap_ute_oob_msg {
+    unsigned char nonce[16];
+    unsigned char auth[16];
+    esp_eap_ute_oob_direction oob_dir;
+} esp_eap_ute_oob_msg_t;
 
 #ifdef __cplusplus
 extern "C" {
@@ -256,6 +268,12 @@ esp_err_t esp_wifi_sta_wpa2_ent_set_fast_phase1_params(esp_eap_fast_config confi
   *    - ESP_FAIL: fail
   */
 esp_err_t esp_wifi_sta_wpa2_use_default_cert_bundle(bool use_default_bundle);
+
+esp_err_t esp_wifi_sta_wpa2_ent_eap_ute_set_initial_association(void);
+esp_err_t esp_wifi_sta_wpa2_ent_eap_ute_set_persistent_association(void);
+esp_eap_ute_oob_msg_t *esp_wifi_sta_wpa2_ent_eap_ute_generate_oob_msg(void);
+esp_err_t esp_wifi_sta_wpa2_ent_eap_ute_receive_oob_msg(unsigned char *nonce, unsigned char *auth);
+bool esp_wifi_sta_wpa2_ent_eap_ute_oob_pending(void);
 
 #ifdef __cplusplus
 }

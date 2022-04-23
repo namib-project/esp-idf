@@ -33,6 +33,7 @@
 #ifdef EAP_PEER_METHOD
 #include "eap_peer/eap_methods.h"
 #endif
+#include "eap_peer/eap_ute.h"
 
 #include "esp_wifi_driver.h"
 #include "esp_private/wifi.h"

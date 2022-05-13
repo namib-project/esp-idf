@@ -709,6 +709,7 @@ static struct wpabuf *eap_noob_handle_type_3(struct eap_sm *sm, struct eap_noob_
     u8 *ns = base64_url_decode(parsed_ns->valuestring, strlen(parsed_ns->valuestring), &base64_len);
     if (base64_len != 32) {
         wpa_printf(MSG_INFO, "EAP-NOOB: Ns was not 32 bytes long");
+        free(ns);
         return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
     }
     data->ns_b = cJSON_PrintUnformatted(parsed_ns);

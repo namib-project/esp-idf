@@ -21,7 +21,7 @@ const int CONNECTED_BIT = BIT0;
 
 static const char *TAG = "example";
 
-static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
+static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
@@ -72,16 +72,16 @@ static void wpa2_enterprise_example_task(void *pvParameters)
     while (1) {
         vTaskDelay(2000 / portTICK_PERIOD_MS);
 
-        if( esp_wifi_sta_wpa2_ent_eap_noob_oob_pending() ){
+        if ( esp_wifi_sta_wpa2_ent_eap_noob_oob_pending() ) {
             eap_noob_oob_msg_t *oobmsg = esp_wifi_sta_wpa2_ent_eap_noob_generate_oob_message();
             char *hoob_str = malloc(33);
             char *noob_str = malloc(33);
             char *noobid_str = malloc(33);
 
-            for(int i = 0;i<16; i++) {
+            for (int i = 0; i < 16; i++) {
                 snprintf(hoob_str + i * 2, 3, "%02x", oobmsg->hoob[i]);
-                snprintf(noob_str + i*2, 3, "%02x", oobmsg->noob[i]);
-                snprintf(noobid_str + i*2, 3, "%02x", oobmsg->noob_id[i]);
+                snprintf(noob_str + i * 2, 3, "%02x", oobmsg->noob[i]);
+                snprintf(noobid_str + i * 2, 3, "%02x", oobmsg->noob_id[i]);
             }
 
 

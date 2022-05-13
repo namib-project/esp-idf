@@ -107,7 +107,8 @@ struct eap_noob_data {
     char *np_b; // Base64URL encoded string, 0-byte terminated
 };
 
-static u8 *eap_noob_calculate_hoob(eap_noob_oob_msg_t *oobMsg){
+static u8 *eap_noob_calculate_hoob(eap_noob_oob_msg_t *oobMsg)
+{
     struct eap_noob_ephemeral_state_info *eph = g_wpa_eap_noob_state.ephemeral_state;
     cJSON *json_vals;
 
@@ -122,12 +123,12 @@ static u8 *eap_noob_calculate_hoob(eap_noob_oob_msg_t *oobMsg){
     cJSON_Delete(json_vals); // Also frees noob_b
 
     size_t hoob_src_len = strlen(eph->hash_base_string) + strlen(dir) + strlen(noob) + 2;
-    char *hoob_src = os_zalloc(hoob_src_len+1);
-    snprintf(hoob_src, hoob_src_len+1, "[%s%s%s]",
+    char *hoob_src = os_zalloc(hoob_src_len + 1);
+    snprintf(hoob_src, hoob_src_len + 1, "[%s%s%s]",
              dir,
              eph->hash_base_string,
              noob
-    );
+            );
 
     wpa_printf(MSG_INFO, "HOOB Input: %s", hoob_src);
     u8 hash_out[32];
@@ -137,13 +138,14 @@ static u8 *eap_noob_calculate_hoob(eap_noob_oob_msg_t *oobMsg){
     free(hoob_src);
     return hash_ret;
 }
-static void eap_noob_calculate_noobid(eap_noob_oob_msg_t *oobMsg){
+static void eap_noob_calculate_noobid(eap_noob_oob_msg_t *oobMsg)
+{
 
     size_t b64len;
     char *noob_b = base64_url_encode(oobMsg->noob, 16, &b64len);
 
     size_t noobid_src_len = strlen(noob_b) + 11;
-    char *noobid_src = os_zalloc(noobid_src_len+1);
+    char *noobid_src = os_zalloc(noobid_src_len + 1);
     snprintf(noobid_src, noobid_src_len + 1, "[\"NoobId\",%s]", noob_b);
     free(noob_b);
     u8 hash_out[32];
@@ -153,16 +155,18 @@ static void eap_noob_calculate_noobid(eap_noob_oob_msg_t *oobMsg){
     free(noobid_src);
 }
 
-bool eap_noob_receive_oob_msg(eap_noob_oob_msg_t *oobMsg){
-    if(g_wpa_eap_noob_state.ephemeral_state == NULL)
+bool eap_noob_receive_oob_msg(eap_noob_oob_msg_t *oobMsg)
+{
+    if (g_wpa_eap_noob_state.ephemeral_state == NULL) {
         return false;
+    }
 
     struct eap_noob_ephemeral_state_info *eph = g_wpa_eap_noob_state.ephemeral_state;
 
     u8 *hoob = eap_noob_calculate_hoob(oobMsg);
 
     // TODO: Should this be a cryptographically secure comparison? Not sure.
-    if(memcmp(oobMsg->hoob, hoob, 16) != 0){
+    if (memcmp(oobMsg->hoob, hoob, 16) != 0) {
         // HOOB did not match, not including the OOB Message in the structure
         return false;
     }
@@ -172,12 +176,13 @@ bool eap_noob_receive_oob_msg(eap_noob_oob_msg_t *oobMsg){
     eap_noob_oob_msg_node_t *oobMsgNode = os_zalloc(sizeof(eap_noob_oob_msg_node_t));
     oobMsgNode->value = oobMsg;
 
-    if(eph->oobMessages == NULL)
+    if (eph->oobMessages == NULL) {
         eph->oobMessages = oobMsgNode;
-    else {
+    } else {
         eap_noob_oob_msg_node_t *cur = eph->oobMessages;
-        while(cur->next != NULL)
+        while (cur->next != NULL) {
             cur = cur->next;
+        }
         cur->next = oobMsgNode;
     }
 
@@ -185,16 +190,20 @@ bool eap_noob_receive_oob_msg(eap_noob_oob_msg_t *oobMsg){
     return true;
 }
 
-eap_noob_oob_msg_t *eap_noob_generate_oob_msg(void){
-    if(g_wpa_eap_noob_state.ephemeral_state == NULL)
+eap_noob_oob_msg_t *eap_noob_generate_oob_msg(void)
+{
+    if (g_wpa_eap_noob_state.ephemeral_state == NULL) {
         return NULL;
+    }
 
     eap_noob_oob_msg_node_t *oobMsgNode = os_zalloc(sizeof(eap_noob_oob_msg_node_t));
-    if(oobMsgNode == NULL)
+    if (oobMsgNode == NULL) {
         return NULL;
+    }
     struct eap_noob_oob_msg *oobMsg = os_zalloc(sizeof(struct eap_noob_oob_msg));
-    if(oobMsg == NULL)
+    if (oobMsg == NULL) {
         return NULL;
+    }
 
     oobMsgNode->value = oobMsg;
 
@@ -206,8 +215,9 @@ eap_noob_oob_msg_t *eap_noob_generate_oob_msg(void){
     int ret_val;
     const char *mbed_seed = "EAP-NOOB-Nonce";
     ret_val = mbedtls_ctr_drbg_seed( &ctr_drbg, mbedtls_entropy_func, &entropy, (unsigned char *)mbed_seed, 14);
-    if(ret_val != 0)
+    if (ret_val != 0) {
         return NULL;
+    }
     mbedtls_ctr_drbg_random(&ctr_drbg, oobMsg->noob, 16);
 
     struct eap_noob_ephemeral_state_info *eph = g_wpa_eap_noob_state.ephemeral_state;
@@ -220,32 +230,37 @@ eap_noob_oob_msg_t *eap_noob_generate_oob_msg(void){
 
     eap_noob_calculate_noobid(oobMsg);
 
-    if(eph->oobMessages == NULL)
+    if (eph->oobMessages == NULL) {
         eph->oobMessages = oobMsgNode;
-    else {
+    } else {
         eap_noob_oob_msg_node_t *cur = eph->oobMessages;
-        while(cur->next != NULL)
+        while (cur->next != NULL) {
             cur = cur->next;
+        }
         cur->next = oobMsgNode;
     }
 
     return oobMsg;
 }
 
-static void free_ephemeral_state(void){
-    if(g_wpa_eap_noob_state.ephemeral_state == NULL)
+static void free_ephemeral_state(void)
+{
+    if (g_wpa_eap_noob_state.ephemeral_state == NULL) {
         return;
+    }
 
     struct eap_noob_ephemeral_state_info *eph = g_wpa_eap_noob_state.ephemeral_state;
 
-    if(eph->hash_base_string != NULL)
+    if (eph->hash_base_string != NULL) {
         os_free(eph->hash_base_string);
-    if(eph->shared_secret != NULL)
+    }
+    if (eph->shared_secret != NULL) {
         os_free(eph->shared_secret);
+    }
 
     eap_noob_oob_msg_node_t *cur = eph->oobMessages;
     eap_noob_oob_msg_node_t *next = NULL;
-    while(cur != NULL){
+    while (cur != NULL) {
         next = cur->next;
         free(cur->value);
         free(cur);
@@ -253,44 +268,51 @@ static void free_ephemeral_state(void){
     }
 }
 
-static char *generate_hash_base(struct eap_noob_data *data, int keyingmode){
+static char *generate_hash_base(struct eap_noob_data *data, int keyingmode)
+{
     cJSON *keyingmode_j = cJSON_CreateNumber(keyingmode);
     char *keyingmode_str = cJSON_PrintUnformatted(keyingmode_j);
     cJSON_Delete(keyingmode_j);
 
     // Add empty string for MAC calculation
     cJSON *emptystr_json = cJSON_CreateString("");
-    if(data->dirs == NULL)
+    if (data->dirs == NULL) {
         data->dirs = cJSON_PrintUnformatted(emptystr_json);
-    if(data->server_info == NULL)
+    }
+    if (data->server_info == NULL) {
         data->server_info = cJSON_PrintUnformatted(emptystr_json);
-    if(data->dirp == NULL)
+    }
+    if (data->dirp == NULL) {
         data->dirp = cJSON_PrintUnformatted(emptystr_json);
-    if(data->peer_info == NULL)
+    }
+    if (data->peer_info == NULL) {
         data->peer_info = cJSON_PrintUnformatted(emptystr_json);
-    if(data->pks == NULL)
+    }
+    if (data->pks == NULL) {
         data->pks = cJSON_PrintUnformatted(emptystr_json);
-    if(data->pkp == NULL)
+    }
+    if (data->pkp == NULL) {
         data->pkp = cJSON_PrintUnformatted(emptystr_json);
+    }
     cJSON_Delete(emptystr_json);
 
     size_t total_length =
-            strlen(data->vers) +
-            strlen(data->verp) +
-            strlen(data->peer_id) +
-            strlen(data->cryptosuites) +
-            strlen(data->dirs) +
-            strlen(data->server_info) +
-            strlen(data->cryptosuitep) +
-            strlen(data->dirp) +
-            strlen(data->nai) +
-            strlen(data->peer_info) +
-            strlen(keyingmode_str) +
-            strlen(data->pks) +
-            strlen(data->ns_b) +
-            strlen(data->pkp) +
-            strlen(data->np_b) +
-            20;
+        strlen(data->vers) +
+        strlen(data->verp) +
+        strlen(data->peer_id) +
+        strlen(data->cryptosuites) +
+        strlen(data->dirs) +
+        strlen(data->server_info) +
+        strlen(data->cryptosuitep) +
+        strlen(data->dirp) +
+        strlen(data->nai) +
+        strlen(data->peer_info) +
+        strlen(keyingmode_str) +
+        strlen(data->pks) +
+        strlen(data->ns_b) +
+        strlen(data->pkp) +
+        strlen(data->np_b) +
+        20;
 
 
 
@@ -313,16 +335,17 @@ static char *generate_hash_base(struct eap_noob_data *data, int keyingmode){
              data->ns_b,
              data->pkp,
              data->np_b
-             );
+            );
     return to_return;
 }
 
-static void eap_noob_save_ephemeral_state(struct eap_noob_data *data, int keyingmode){
+static void eap_noob_save_ephemeral_state(struct eap_noob_data *data, int keyingmode)
+{
     free_ephemeral_state();
     g_wpa_eap_noob_state.ephemeral_state = os_zalloc(sizeof(struct eap_noob_ephemeral_state_info));
     struct eap_noob_ephemeral_state_info *eph = g_wpa_eap_noob_state.ephemeral_state;
 
-    if(data->shared_key != NULL){
+    if (data->shared_key != NULL) {
         eph->shared_secret = os_zalloc(data->shared_key_length);
         eph->shared_secret_length = data->shared_key_length;
         memcpy(eph->shared_secret, data->shared_key, eph->shared_secret_length);
@@ -331,17 +354,19 @@ static void eap_noob_save_ephemeral_state(struct eap_noob_data *data, int keying
     memcpy(eph->np, data->np, 32);
     memcpy(eph->ns, data->ns, 32);
 
-    if(g_wpa_eap_noob_state.peer_id != NULL)
+    if (g_wpa_eap_noob_state.peer_id != NULL) {
         os_free(g_wpa_eap_noob_state.peer_id);
+    }
     size_t len = strlen(data->peer_id);
-    g_wpa_eap_noob_state.peer_id = os_zalloc(len+1);
-    memcpy(g_wpa_eap_noob_state.peer_id, data->peer_id, len+1);
+    g_wpa_eap_noob_state.peer_id = os_zalloc(len + 1);
+    memcpy(g_wpa_eap_noob_state.peer_id, data->peer_id, len + 1);
 
     eph->hash_base_string = generate_hash_base(data, keyingmode);
     g_wpa_eap_noob_state.noob_state = EAP_NOOB_STATE_WAITING_FOR_OOB;
 }
 
-static void eap_noob_save_persistent_state(struct eap_noob_data *data, u8 *kz){
+static void eap_noob_save_persistent_state(struct eap_noob_data *data, u8 *kz)
+{
     size_t len;
 
     g_wpa_eap_noob_state.active = true;
@@ -349,11 +374,12 @@ static void eap_noob_save_persistent_state(struct eap_noob_data *data, u8 *kz){
 
     g_wpa_eap_noob_state.noob_state = EAP_NOOB_STATE_REGISTERED;
 
-    if(g_wpa_eap_noob_state.peer_id != NULL)
+    if (g_wpa_eap_noob_state.peer_id != NULL) {
         os_free(g_wpa_eap_noob_state.peer_id);
+    }
     len = strlen(data->peer_id);
-    g_wpa_eap_noob_state.peer_id = os_zalloc(len+1);
-    memcpy(g_wpa_eap_noob_state.peer_id, data->peer_id, len+1);
+    g_wpa_eap_noob_state.peer_id = os_zalloc(len + 1);
+    memcpy(g_wpa_eap_noob_state.peer_id, data->peer_id, len + 1);
 
     g_wpa_eap_noob_state.version = 1;
     g_wpa_eap_noob_state.cryptosuite = 1;
@@ -361,26 +387,28 @@ static void eap_noob_save_persistent_state(struct eap_noob_data *data, u8 *kz){
     // TODO
     //   Currently the kz_prev behavior is not supported.
     //   This includes also the cryptosuite_prev behavior.
-    if(kz != NULL)
+    if (kz != NULL) {
         memcpy(g_wpa_eap_noob_state.kz, kz, 32);
+    }
 
     free_ephemeral_state();
 }
 
-static void eap_noob_calculate_kdf(u8 *out, size_t len, u8 *z, size_t z_len, u8 *party_u_info, u8 *party_v_info, u8 *supp_priv_info, size_t supp_priv_info_len){
+static void eap_noob_calculate_kdf(u8 *out, size_t len, u8 *z, size_t z_len, u8 *party_u_info, u8 *party_v_info, u8 *supp_priv_info, size_t supp_priv_info_len)
+{
     char *alg_id = "EAP-NOOB";
     size_t kdf_len = 4 + z_len + 8 + 64 + supp_priv_info_len;
     u8 *kdf_input = os_zalloc(kdf_len);
-    memcpy(kdf_input+4, z, z_len);
-    memcpy(kdf_input+4+z_len, alg_id, 8);
-    memcpy(kdf_input+4+z_len+8, party_u_info, 32);
-    memcpy(kdf_input+4+z_len+8+32, party_v_info, 32);
-    memcpy(kdf_input+4+z_len+8+64, supp_priv_info, supp_priv_info_len);
+    memcpy(kdf_input + 4, z, z_len);
+    memcpy(kdf_input + 4 + z_len, alg_id, 8);
+    memcpy(kdf_input + 4 + z_len + 8, party_u_info, 32);
+    memcpy(kdf_input + 4 + z_len + 8 + 32, party_v_info, 32);
+    memcpy(kdf_input + 4 + z_len + 8 + 64, supp_priv_info, supp_priv_info_len);
 
     size_t curptr = 0;
     u32 id = 1;
     u8 kdf_out[32];
-    while(curptr < len){
+    while (curptr < len) {
         kdf_input[0] = id >> 24;
         kdf_input[1] = id >> 16;
         kdf_input[2] = id >> 8;
@@ -389,24 +417,26 @@ static void eap_noob_calculate_kdf(u8 *out, size_t len, u8 *z, size_t z_len, u8 
 
         mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), kdf_input, kdf_len, kdf_out);
 
-        if(curptr+32<=len){
+        if (curptr + 32 <= len) {
             memcpy(out + curptr, kdf_out, 32);
             curptr += 32;
         } else {
-            memcpy(out + curptr, kdf_out, len-curptr);
+            memcpy(out + curptr, kdf_out, len - curptr);
             curptr = len;
         }
     }
 
 }
-static struct eap_noob_cryptographic_material *eap_noob_calculate_cryptographic_elements(struct eap_noob_data *data, int keyingmode, u8 *kz) {
+static struct eap_noob_cryptographic_material *eap_noob_calculate_cryptographic_elements(struct eap_noob_data *data, int keyingmode, u8 *kz)
+{
 
-    if (keyingmode != EAP_NOOB_KEYINGMODE_COMPLETION && kz == NULL)
+    if (keyingmode != EAP_NOOB_KEYINGMODE_COMPLETION && kz == NULL) {
         return NULL;
+    }
 
     struct eap_noob_cryptographic_material *to_return = os_zalloc(sizeof(struct eap_noob_cryptographic_material));
     if (keyingmode == EAP_NOOB_KEYINGMODE_RECONNECT_WITHOUT_ECDHE ||
-        keyingmode == EAP_NOOB_KEYINGMODE_RECONNECT_WITH_ECDHE) {
+            keyingmode == EAP_NOOB_KEYINGMODE_RECONNECT_WITH_ECDHE) {
         to_return->kdf_len = 288;
     } else {
         to_return->kdf_len = 320;
@@ -454,7 +484,8 @@ static struct eap_noob_cryptographic_material *eap_noob_calculate_cryptographic_
     return to_return;
 }
 
-static struct wpabuf *build_error_msg(const struct wpabuf *reqData, int error_code){
+static struct wpabuf *build_error_msg(const struct wpabuf *reqData, int error_code)
+{
     //<editor-fold desc="Build response JSON structure">
     cJSON *ret_json = cJSON_CreateObject();
     cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(EAP_NOOB_MSG_TYPE_ERROR_NOTIFICATION));
@@ -473,7 +504,8 @@ static struct wpabuf *build_error_msg(const struct wpabuf *reqData, int error_co
     return to_return;
 }
 
-static struct wpabuf * eap_noob_handle_type_1(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){
+static struct wpabuf *eap_noob_handle_type_1(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json)
+{
     // No parsing of the incoming JSON, since it does not contain anything.
 
     //<editor-fold desc="Build response JSON structure">
@@ -481,7 +513,7 @@ static struct wpabuf * eap_noob_handle_type_1(struct eap_sm *sm, struct eap_noob
     cJSON *ret_json = cJSON_CreateObject();
     cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(EAP_NOOB_MSG_TYPE_PEERID_AND_STATE_DISCOVERY));
     cJSON_AddItemToObject(ret_json, "PeerState", cJSON_CreateNumber(g_wpa_eap_noob_state.noob_state));
-    if(data->peer_id){
+    if (data->peer_id) {
         cJSON_AddItemToObject(ret_json, "PeerId", cJSON_CreateStringReference(data->peer_id));
     }
     //</editor-fold>
@@ -498,24 +530,26 @@ static struct wpabuf * eap_noob_handle_type_1(struct eap_sm *sm, struct eap_noob
     data->internal_state = EAP_NOOB_STATE_INTERNAL_PEERID_SENT;
     return to_return;
 }
-static struct wpabuf * eap_noob_handle_type_2(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){
+static struct wpabuf *eap_noob_handle_type_2(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json)
+{
     //<editor-fold desc="Parse incoming packet">
     cJSON *parsed_vers = cJSON_GetObjectItemCaseSensitive(json, "Vers");
-    if(!cJSON_IsArray(parsed_vers)){
+    if (!cJSON_IsArray(parsed_vers)) {
         wpa_printf(MSG_INFO, "EAP-NOOB: Vers was not an array");
         return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
     }
     cJSON *parsed_vers_item;
     bool compatible = false;
-    cJSON_ArrayForEach(parsed_vers_item, parsed_vers){
-        if(!cJSON_IsNumber(parsed_vers_item)){
+    cJSON_ArrayForEach(parsed_vers_item, parsed_vers) {
+        if (!cJSON_IsNumber(parsed_vers_item)) {
             return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
         }
         // TODO Currently this is fixed on protocol version 1
-        if(parsed_vers_item->valueint == 1)
-            compatible=true;
+        if (parsed_vers_item->valueint == 1) {
+            compatible = true;
+        }
     }
-    if(!compatible) {
+    if (!compatible) {
         wpa_printf(MSG_INFO, "EAP-NOOB: No mutually supported version");
         return build_error_msg(reqData, EAP_NOOB_ERROR_NO_MUTUALLY_SUPPORTED_PROTOCOL_VERSION);
     }
@@ -524,69 +558,71 @@ static struct wpabuf * eap_noob_handle_type_2(struct eap_sm *sm, struct eap_noob
 
     size_t len;
     cJSON *parsed_peerid = cJSON_GetObjectItemCaseSensitive(json, "PeerId");
-    if(!cJSON_IsString(parsed_peerid)){
+    if (!cJSON_IsString(parsed_peerid)) {
         wpa_printf(MSG_INFO, "EAP-NOOB: PeerID was not a string");
         return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
     }
-    if(data->peer_id == NULL){
+    if (data->peer_id == NULL) {
         wpa_printf(MSG_INFO, "EAP-NOOB: New PeerID allocated");
         len = strlen(parsed_peerid->valuestring);
-        data->peer_id = os_zalloc(len+1);
-        memcpy(data->peer_id, parsed_peerid->valuestring, len+1);
+        data->peer_id = os_zalloc(len + 1);
+        memcpy(data->peer_id, parsed_peerid->valuestring, len + 1);
     } else {
         // TODO check for identical peer id
     }
 
     cJSON *parsed_newnai = cJSON_GetObjectItemCaseSensitive(json, "NewNAI");
-    if(parsed_newnai == NULL){
+    if (parsed_newnai == NULL) {
         wpa_printf(MSG_DEBUG, "EAP-NOOB: No NewNAI");
     } else {
-        if(!cJSON_IsString(parsed_newnai)){
+        if (!cJSON_IsString(parsed_newnai)) {
             wpa_printf(MSG_INFO, "EAP-NOOB: NewNAI was not a string");
             return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
         }
         wpa_printf(MSG_INFO, "EAP-NOOB: NewNAI is set, updating");
-        if(data->nai)
+        if (data->nai) {
             os_free(data->nai);
+        }
         len = strlen(parsed_newnai->valuestring);
-        data->nai = os_zalloc(len+1);
+        data->nai = os_zalloc(len + 1);
         strcpy(data->nai, parsed_newnai->valuestring);
     }
 
     cJSON *parsed_cryptosuites = cJSON_GetObjectItemCaseSensitive(json, "Cryptosuites");
-    if(!cJSON_IsArray(parsed_cryptosuites)){
+    if (!cJSON_IsArray(parsed_cryptosuites)) {
         wpa_printf(MSG_INFO, "EAP-NOOB: Cryptosuites was not an array");
         return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
     }
     cJSON *parsed_cryptosuite_item;
     compatible = false;
-    cJSON_ArrayForEach(parsed_cryptosuite_item, parsed_cryptosuites){
-        if(!cJSON_IsNumber(parsed_cryptosuite_item)){
+    cJSON_ArrayForEach(parsed_cryptosuite_item, parsed_cryptosuites) {
+        if (!cJSON_IsNumber(parsed_cryptosuite_item)) {
             return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
         }
         // TODO Currently fixed on cryptosuite value "1" (which is Curve25519 with SHA2)
-        if(parsed_cryptosuite_item->valueint == 1)
-            compatible=true;
+        if (parsed_cryptosuite_item->valueint == 1) {
+            compatible = true;
+        }
     }
-    if(!compatible) {
+    if (!compatible) {
         wpa_printf(MSG_INFO, "EAP-NOOB: No mutually supported cryptosuite");
         return build_error_msg(reqData, EAP_NOOB_ERROR_NO_MUTUALLY_SUPPORTED_CRYPTOSUITE);
     }
     data->cryptosuites = cJSON_PrintUnformatted(parsed_cryptosuites);
 
     cJSON *parsed_dirs = cJSON_GetObjectItemCaseSensitive(json, "Dirs");
-    if(!cJSON_IsNumber(parsed_dirs)){
+    if (!cJSON_IsNumber(parsed_dirs)) {
         wpa_printf(MSG_INFO, "EAP-NOOB: Dirs was not a number");
         return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
     }
-    if((parsed_dirs->valueint & g_wpa_eap_noob_state.supported_dir) == 0){
+    if ((parsed_dirs->valueint & g_wpa_eap_noob_state.supported_dir) == 0) {
         wpa_printf(MSG_INFO, "EAP-NOOB: No mutually supported OOB direction");
         return build_error_msg(reqData, EAP_NOOB_ERROR_NO_MUTUALLY_SUPPORTED_OOB_DIRECTION);
     }
     data->dirs = cJSON_PrintUnformatted(parsed_dirs);
 
     cJSON *parsed_serverinfo = cJSON_GetObjectItemCaseSensitive(json, "ServerInfo");
-    if(!cJSON_IsObject(parsed_serverinfo)){
+    if (!cJSON_IsObject(parsed_serverinfo)) {
         wpa_printf(MSG_INFO, "EAP-NOOB: ServerInfo was not a JSON Object");
         return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
     }
@@ -632,28 +668,29 @@ static struct wpabuf * eap_noob_handle_type_2(struct eap_sm *sm, struct eap_noob
     data->internal_state = EAP_NOOB_STATE_INTERNAL_VERSION_NEGOTIATION_SENT;
     return to_return;
 }
-static struct wpabuf * eap_noob_handle_type_3(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){
+static struct wpabuf *eap_noob_handle_type_3(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json)
+{
     //<editor-fold desc="Parse incoming JSON">
     cJSON *parsed_peerid = cJSON_GetObjectItemCaseSensitive(json, "PeerId");
-    if(!cJSON_IsString(parsed_peerid)){
+    if (!cJSON_IsString(parsed_peerid)) {
         wpa_printf(MSG_INFO, "EAP-NOOB: PeerID was not a string");
         return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
     }
     // TODO check for identical peer id
 
     cJSON *parsed_pks = cJSON_GetObjectItemCaseSensitive(json, "PKs");
-    if(!cJSON_IsObject(parsed_pks)){
+    if (!cJSON_IsObject(parsed_pks)) {
         wpa_printf(MSG_INFO, "EAP-NOOB: PKs was not an object");
         return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
     }
     cJSON *parsed_pks_x = cJSON_GetObjectItemCaseSensitive(parsed_pks, "x");
-    if(!cJSON_IsString(parsed_pks_x)){
+    if (!cJSON_IsString(parsed_pks_x)) {
         wpa_printf(MSG_INFO, "EAP-NOOB: PKs.x was not a string");
         return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
     }
     size_t base64_len;
     u8 *otherpubkey_tmp = base64_url_decode(parsed_pks_x->valuestring, strlen(parsed_pks_x->valuestring), &base64_len);
-    if(base64_len != 32){
+    if (base64_len != 32) {
         free(otherpubkey_tmp);
         return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_ECDHE_KEY);
     }
@@ -663,12 +700,12 @@ static struct wpabuf * eap_noob_handle_type_3(struct eap_sm *sm, struct eap_noob
     data->pks = cJSON_PrintUnformatted(parsed_pks);
 
     cJSON *parsed_ns = cJSON_GetObjectItemCaseSensitive(json, "Ns");
-    if(!cJSON_IsString(parsed_ns)){
+    if (!cJSON_IsString(parsed_ns)) {
         wpa_printf(MSG_INFO, "EAP-NOOB: Ns was not a string");
         return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
     }
     u8 *ns = base64_url_decode(parsed_ns->valuestring, strlen(parsed_ns->valuestring), &base64_len);
-    if(base64_len != 32){
+    if (base64_len != 32) {
         wpa_printf(MSG_INFO, "EAP-NOOB: Ns was not 32 bytes long");
         return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
     }
@@ -697,17 +734,21 @@ static struct wpabuf * eap_noob_handle_type_3(struct eap_sm *sm, struct eap_noob
 
     const char *mbed_seed = "ecdh";
     ret_val = mbedtls_ctr_drbg_seed( &ctr_drbg, mbedtls_entropy_func, &entropy, (unsigned char *)mbed_seed, 4);
-    if(ret_val != 0)
+    if (ret_val != 0) {
         return build_error_msg(reqData, EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR);
+    }
     ret_val = mbedtls_ecp_group_load( &x25519_ctx_m->MBEDTLS_PRIVATE(grp), MBEDTLS_ECP_DP_CURVE25519 );
-    if(ret_val != 0)
+    if (ret_val != 0) {
         return build_error_msg(reqData, EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR);
+    }
     ret_val = mbedtls_ecdh_gen_public( &x25519_ctx_m->MBEDTLS_PRIVATE(grp), &x25519_ctx_m->MBEDTLS_PRIVATE(d), &x25519_ctx_m->MBEDTLS_PRIVATE(Q), mbedtls_ctr_drbg_random, &ctr_drbg );
-    if(ret_val != 0)
+    if (ret_val != 0) {
         return build_error_msg(reqData, EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR);
+    }
     ret_val = mbedtls_mpi_write_binary_le( &x25519_ctx_m->MBEDTLS_PRIVATE(Q).MBEDTLS_PRIVATE(X), mykey, 32);
-    if(ret_val != 0)
+    if (ret_val != 0) {
         return build_error_msg(reqData, EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR);
+    }
 
 
     size_t mykey_b64_len;
@@ -716,11 +757,13 @@ static struct wpabuf * eap_noob_handle_type_3(struct eap_sm *sm, struct eap_noob
     mbedtls_mpi_lset(&x25519_ctx_m->MBEDTLS_PRIVATE(Qp).MBEDTLS_PRIVATE(Z), 1);
     ret_val = mbedtls_mpi_read_binary_le( &x25519_ctx_m->MBEDTLS_PRIVATE(Qp).MBEDTLS_PRIVATE(X), otherpubkey, 32);
     ret_val = mbedtls_ecdh_compute_shared( &x25519_ctx_m->MBEDTLS_PRIVATE(grp), &x25519_ctx_m->MBEDTLS_PRIVATE(z), &x25519_ctx_m->MBEDTLS_PRIVATE(Qp), &x25519_ctx_m->MBEDTLS_PRIVATE(d), mbedtls_ctr_drbg_random, &ctr_drbg );
-    if(ret_val != 0)
+    if (ret_val != 0) {
         return build_error_msg(reqData, EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR);
+    }
     ret_val = mbedtls_mpi_write_binary_le( &x25519_ctx_m->MBEDTLS_PRIVATE(z), sharedkey, 32);
-    if(ret_val != 0)
+    if (ret_val != 0) {
         return build_error_msg(reqData, EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR);
+    }
 
     data->shared_key = os_zalloc(32);
     memcpy(data->shared_key, sharedkey, 32);
@@ -766,7 +809,8 @@ static struct wpabuf * eap_noob_handle_type_3(struct eap_sm *sm, struct eap_noob
     data->internal_state = EAP_NOOB_STATE_INTERNAL_PUBKEY_SENT;
     return to_return;
 }
-static struct wpabuf * eap_noob_handle_type_4(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){
+static struct wpabuf *eap_noob_handle_type_4(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json)
+{
     // TODO Actually parse the waiting exchange
 
     //<editor-fold desc="Build response JSON structure">
@@ -789,16 +833,18 @@ static struct wpabuf * eap_noob_handle_type_4(struct eap_sm *sm, struct eap_noob
 
     return to_return;
 }
-static struct wpabuf * eap_noob_handle_type_5(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){
+static struct wpabuf *eap_noob_handle_type_5(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json)
+{
     // TODO: Parse incoming message
     struct eap_noob_ephemeral_state_info *eph = g_wpa_eap_noob_state.ephemeral_state;
     eap_noob_oob_msg_node_t *msgNode = eph->oobMessages;
-    while(msgNode != NULL){
-        if(msgNode->value->dir == EAP_NOOB_OOB_DIRECTION_SERVER_TO_PEER)
+    while (msgNode != NULL) {
+        if (msgNode->value->dir == EAP_NOOB_OOB_DIRECTION_SERVER_TO_PEER) {
             break;
+        }
         msgNode = msgNode->next;
     }
-    if(msgNode == NULL){
+    if (msgNode == NULL) {
         // TODO: Send out error, no suitable OOB Message found
         //   This should not happen, since type 5 is only sent by the server if we are in "OOB Received" state,
         //   and we should not be in this state if we don't have a OOB message here.
@@ -828,52 +874,52 @@ static struct wpabuf * eap_noob_handle_type_5(struct eap_sm *sm, struct eap_noob
 
     return to_return;
 }
-static struct wpabuf * eap_noob_handle_type_6(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){
+static struct wpabuf *eap_noob_handle_type_6(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json)
+{
     //<editor-fold desc="Parse incoming JSON">
     // TODO: Check for correct PeerId
     cJSON *parsed_noobid = cJSON_GetObjectItemCaseSensitive(json, "NoobId");
-    if(!cJSON_IsString(parsed_noobid)){
+    if (!cJSON_IsString(parsed_noobid)) {
         wpa_printf(MSG_INFO, "EAP-NOOB: NoobId was not a string");
         return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
     }
     size_t b64_len;
     u8 *noobid = base64_url_decode(parsed_noobid->valuestring, strlen(parsed_noobid->valuestring), &b64_len);
-    if(b64_len != 16){
+    if (b64_len != 16) {
         free(noobid);
         wpa_printf(MSG_INFO, "EAP-NOOB: NoobId was not 16 bytes long");
         return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
     }
-    if(data->used_oob_msg != NULL)
-    {
-        if(memcmp(data->used_oob_msg->noob_id, noobid, 16) != 0){
+    if (data->used_oob_msg != NULL) {
+        if (memcmp(data->used_oob_msg->noob_id, noobid, 16) != 0) {
             free(noobid);
             wpa_printf(MSG_INFO, "EAP-NOOB: NoobId did not match");
             return build_error_msg(reqData, EAP_NOOB_ERROR_UNRECOGNIZED_OOB_MSG_IDENTIFIER);
         }
     } else {
         eap_noob_oob_msg_node_t *cur = g_wpa_eap_noob_state.ephemeral_state->oobMessages;
-        while(cur != NULL){
-            if(memcmp(cur->value->noob_id, noobid, 16) == 0){
+        while (cur != NULL) {
+            if (memcmp(cur->value->noob_id, noobid, 16) == 0) {
                 data->used_oob_msg = cur->value;
                 break;
             }
             cur = cur->next;
         }
         free(noobid);
-        if(cur == NULL){
+        if (cur == NULL) {
             wpa_printf(MSG_INFO, "EAP-NOOB: no matching NoobId found");
             return build_error_msg(reqData, EAP_NOOB_ERROR_UNRECOGNIZED_OOB_MSG_IDENTIFIER);
         }
     }
 
     cJSON *parsed_macs = cJSON_GetObjectItemCaseSensitive(json, "MACs");
-    if(!cJSON_IsString(parsed_macs)){
+    if (!cJSON_IsString(parsed_macs)) {
         wpa_printf(MSG_INFO, "EAP-NOOB: NoobId was not a string");
         return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
     }
     size_t b64_len2;
     u8 *macs = base64_url_decode(parsed_macs->valuestring, strlen(parsed_macs->valuestring), &b64_len2);
-    if(b64_len2 != 32){
+    if (b64_len2 != 32) {
         os_free(macs);
         wpa_printf(MSG_INFO, "EAP-NOOB: MACs was not 32 bytes long");
         return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
@@ -882,12 +928,13 @@ static struct wpabuf * eap_noob_handle_type_6(struct eap_sm *sm, struct eap_noob
 
     data->cryptokeys = eap_noob_calculate_cryptographic_elements(data, EAP_NOOB_KEYINGMODE_COMPLETION, NULL);
     u8 mac_check = 0;
-    for(size_t i = 0; i<32; i++)
+    for (size_t i = 0; i < 32; i++) {
         mac_check |= macs[i] ^ data->cryptokeys->macs[i];
+    }
 
     os_free(macs);
 
-    if(mac_check != 0){
+    if (mac_check != 0) {
         wpa_printf(MSG_INFO, "EAP-NOOB: MACs did not match.");
         return build_error_msg(reqData, EAP_NOOB_ERROR_HMAC_VERIFICATION_FAILURE);
     }
@@ -924,43 +971,55 @@ static struct wpabuf * eap_noob_handle_type_6(struct eap_sm *sm, struct eap_noob
 
     return to_return;
 }
-static struct wpabuf * eap_noob_handle_type_7(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){ return NULL; }
-static struct wpabuf * eap_noob_handle_type_8(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){ return NULL; }
-static struct wpabuf * eap_noob_handle_type_9(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json){ return NULL; }
+static struct wpabuf *eap_noob_handle_type_7(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json)
+{
+    return NULL;
+}
+static struct wpabuf *eap_noob_handle_type_8(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json)
+{
+    return NULL;
+}
+static struct wpabuf *eap_noob_handle_type_9(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json)
+{
+    return NULL;
+}
 
 static void eap_noob_deinit(struct eap_sm *sm, void *priv);
-static void *eap_noob_init(struct eap_sm *sm){
+static void *eap_noob_init(struct eap_sm *sm)
+{
     // IF the global eap_noob state is not in active mode, we won't try to do EAP-NOOB.
-    if(!g_wpa_eap_noob_state.active)
+    if (!g_wpa_eap_noob_state.active) {
         return NULL;
+    }
 
     struct eap_noob_data *data;
     data = (struct eap_noob_data *)os_zalloc(sizeof(struct eap_noob_data));
-    if(data == NULL)
+    if (data == NULL) {
         return NULL;
+    }
 
     data->internal_state = EAP_NOOB_STATE_INTERNAL_IDENTITY_SENT;
 
     // Get the NAI from the anonymous identity
     data->nai = os_zalloc(g_wpa_anonymous_identity_len + 1);
-    if(data->nai == NULL){
+    if (data->nai == NULL) {
         eap_noob_deinit(sm, data);
         return NULL;
     }
     memcpy(data->nai, g_wpa_anonymous_identity, g_wpa_anonymous_identity_len);
     data->nai[g_wpa_anonymous_identity_len] = 0;
 
-    if(g_wpa_eap_noob_state.peer_id){
-        data->peer_id = os_zalloc(strlen(g_wpa_eap_noob_state.peer_id)+1);
-        if(data->peer_id == NULL){
+    if (g_wpa_eap_noob_state.peer_id) {
+        data->peer_id = os_zalloc(strlen(g_wpa_eap_noob_state.peer_id) + 1);
+        if (data->peer_id == NULL) {
             eap_noob_deinit(sm, data);
             return NULL;
         }
         strcpy(data->peer_id, g_wpa_eap_noob_state.peer_id);
     }
 
-    if(g_wpa_eap_noob_state.ephemeral_state != NULL){
-        if(g_wpa_eap_noob_state.ephemeral_state->shared_secret != NULL) {
+    if (g_wpa_eap_noob_state.ephemeral_state != NULL) {
+        if (g_wpa_eap_noob_state.ephemeral_state->shared_secret != NULL) {
             data->shared_key_length = g_wpa_eap_noob_state.ephemeral_state->shared_secret_length;
             data->shared_key = os_zalloc(data->shared_key_length);
             memcpy(data->shared_key, g_wpa_eap_noob_state.ephemeral_state->shared_secret, data->shared_key_length);
@@ -971,73 +1030,93 @@ static void *eap_noob_init(struct eap_sm *sm){
 
     return data;
 }
-static void eap_noob_deinit(struct eap_sm *sm, void *priv){
+static void eap_noob_deinit(struct eap_sm *sm, void *priv)
+{
     struct eap_noob_data *data = priv;
-    if (data == NULL)
+    if (data == NULL) {
         return;
+    }
 
-    if(data->nai != NULL)
+    if (data->nai != NULL) {
         os_free(data->nai);
+    }
 
-    if(data->peer_id != NULL)
+    if (data->peer_id != NULL) {
         os_free(data->peer_id);
+    }
 
-    if(data->vers != NULL)
+    if (data->vers != NULL) {
         os_free(data->vers);
+    }
 
-    if(data->cryptosuites != NULL)
+    if (data->cryptosuites != NULL) {
         os_free(data->cryptosuites);
+    }
 
-    if(data->dirs != NULL)
+    if (data->dirs != NULL) {
         os_free(data->dirs);
+    }
 
-    if(data->server_info != NULL)
+    if (data->server_info != NULL) {
         os_free(data->server_info);
+    }
 
-    if(data->verp != NULL)
+    if (data->verp != NULL) {
         os_free(data->verp);
+    }
 
-    if(data->cryptosuitep != NULL)
+    if (data->cryptosuitep != NULL) {
         os_free(data->cryptosuitep);
+    }
 
-    if(data->dirp != NULL)
+    if (data->dirp != NULL) {
         os_free(data->dirp);
+    }
 
-    if(data->peer_info != NULL)
+    if (data->peer_info != NULL) {
         os_free(data->peer_info);
+    }
 
-    if(data->pks != NULL)
+    if (data->pks != NULL) {
         os_free(data->pks);
+    }
 
-    if(data->ns_b != NULL)
+    if (data->ns_b != NULL) {
         os_free(data->ns_b);
+    }
 
-    if(data->pkp != NULL)
+    if (data->pkp != NULL) {
         os_free(data->pkp);
+    }
 
-    if(data->np_b != NULL)
+    if (data->np_b != NULL) {
         os_free(data->np_b);
+    }
 
-    if(data->shared_key != NULL)
+    if (data->shared_key != NULL) {
         os_free(data->shared_key);
+    }
 
-    if(data->cryptokeys != NULL)
+    if (data->cryptokeys != NULL) {
         os_free(data->cryptokeys);
-    if(data->cryptokeys2 != NULL)
+    }
+    if (data->cryptokeys2 != NULL) {
         os_free(data->cryptokeys2);
+    }
 
     // Caution: used_oob_msg is not freed, since this is simply a reference
 
     os_free(data);
 }
-static struct wpabuf *eap_noob_process(struct eap_sm *sm, void *priv, struct eap_method_ret *ret, const struct wpabuf *reqData){
+static struct wpabuf *eap_noob_process(struct eap_sm *sm, void *priv, struct eap_method_ret *ret, const struct wpabuf *reqData)
+{
     size_t len;
     struct eap_noob_data *data = priv;
     const u8 *eap_pkt = eap_hdr_validate(EAP_VENDOR_IETF, EAP_TYPE_NOOB, reqData, &len);
 
     cJSON *recvContent;
 
-    if(eap_pkt == NULL){
+    if (eap_pkt == NULL) {
         // No content in the EAP Packet, so ignore it.
         ret->ignore = true;
         return NULL;
@@ -1046,14 +1125,14 @@ static struct wpabuf *eap_noob_process(struct eap_sm *sm, void *priv, struct eap
     struct wpabuf *to_return;
 
     recvContent = cJSON_ParseWithLength((char *) eap_pkt, len);
-    if (recvContent == NULL){
+    if (recvContent == NULL) {
         // Invalid JSON
         to_return = build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
         goto send_wpabuf;
     }
 
     cJSON *parsed_type = cJSON_GetObjectItemCaseSensitive(recvContent, "Type");
-    if(!cJSON_IsNumber(parsed_type)) {
+    if (!cJSON_IsNumber(parsed_type)) {
         // Type is not a number
         to_return = build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_DATA);
         goto send_wpabuf;
@@ -1061,119 +1140,124 @@ static struct wpabuf *eap_noob_process(struct eap_sm *sm, void *priv, struct eap
 
     int type = parsed_type->valueint;
 
-    switch(type) {
-        case EAP_NOOB_MSG_TYPE_ERROR_NOTIFICATION:
-            // Error message
-            goto ignore;
-        case EAP_NOOB_MSG_TYPE_PEERID_AND_STATE_DISCOVERY:
-            // PeerId and PeerState discovery
-            if (data->internal_state != EAP_NOOB_STATE_INTERNAL_IDENTITY_SENT) {
-                to_return = build_error_msg(reqData, EAP_NOOB_ERROR_UNEXPECTED_MESSAGE_TYPE);
-            } else {
-                to_return = eap_noob_handle_type_1(sm, data, ret, reqData, recvContent);
-            }
-            break;
-        case EAP_NOOB_MSG_TYPE_INITIAL_VERSION_NEGOTIATION:
-            // Version, cryptosuite, and parameter negotiation
-            if (g_wpa_eap_noob_state.noob_state == EAP_NOOB_STATE_REGISTERED ||
-                g_wpa_eap_noob_state.noob_state == EAP_NOOB_STATE_RECONNECTING
-            ) {
-                to_return = build_error_msg(reqData, EAP_NOOB_ERROR_STATE_MISMATCH);
-            } else if (data->internal_state != EAP_NOOB_STATE_INTERNAL_PEERID_SENT) {
-                to_return = build_error_msg(reqData, EAP_NOOB_ERROR_UNEXPECTED_MESSAGE_TYPE);
-            } else {
-                to_return = eap_noob_handle_type_2(sm, data, ret, reqData, recvContent);
-            }
-            break;
-        case EAP_NOOB_MSG_TYPE_INITIAL_ECDHE_EXCHANGE:
-            // Exchange of ECDHE keys and nonces
-            if (data->internal_state != EAP_NOOB_STATE_INTERNAL_VERSION_NEGOTIATION_SENT) {
-                to_return = build_error_msg(reqData, EAP_NOOB_ERROR_UNEXPECTED_MESSAGE_TYPE);
-            } else {
-                to_return = eap_noob_handle_type_3(sm, data, ret, reqData, recvContent);
-            }
-            break;
-        case EAP_NOOB_MSG_TYPE_WAITING:
-            // Indication to the peer that the server has not yet received an OOB message
-            if (g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_WAITING_FOR_OOB &&
-                g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_OOB_RECEIVED
-            ) {
-                to_return = build_error_msg(reqData, EAP_NOOB_ERROR_STATE_MISMATCH);
-            } else if (data->internal_state != EAP_NOOB_STATE_INTERNAL_PEERID_SENT) {
-                to_return = build_error_msg(reqData, EAP_NOOB_ERROR_UNEXPECTED_MESSAGE_TYPE);
-            } else {
-                to_return = eap_noob_handle_type_4(sm, data, ret, reqData, recvContent);
-            }
-            break;
-        case EAP_NOOB_MSG_TYPE_COMPLETION_NOOBID_DISCOVERY:
-            // NoobId discovery
-            if (g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_WAITING_FOR_OOB &&
-                g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_OOB_RECEIVED
-            ) {
-                to_return = build_error_msg(reqData, EAP_NOOB_ERROR_STATE_MISMATCH);
-            } else if (data->internal_state != EAP_NOOB_STATE_INTERNAL_PEERID_SENT) {
-                to_return = build_error_msg(reqData, EAP_NOOB_ERROR_UNEXPECTED_MESSAGE_TYPE);
-            } else {
-                to_return = eap_noob_handle_type_5(sm, data, ret, reqData, recvContent);
-            }
-            break;
-        case EAP_NOOB_MSG_TYPE_COMPLETION_AUTHENTICATION:
-            // Authentication and key confirmation with HMAC
-            if (g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_WAITING_FOR_OOB &&
-                g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_OOB_RECEIVED
-            ) {
-                to_return = build_error_msg(reqData, EAP_NOOB_ERROR_STATE_MISMATCH);
-            } else if (data->internal_state != EAP_NOOB_STATE_INTERNAL_PEERID_SENT &&
-                       data->internal_state != EAP_NOOB_STATE_INTERNAL_NOOBID_DISCOVERY_SENT
-            ){
-                to_return = build_error_msg(reqData, EAP_NOOB_ERROR_UNEXPECTED_MESSAGE_TYPE);
-            } else {
-                to_return = eap_noob_handle_type_6(sm, data, ret, reqData, recvContent);
-            }
-            break;
-        case EAP_NOOB_MSG_TYPE_RECONNECT_VERSION_NEGOTIATION:
-            // Version, cryptosuite, and parameter negotiation
-            if (g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_REGISTERED &&
-                g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_RECONNECTING
-            ){
-                to_return = build_error_msg(reqData, EAP_NOOB_ERROR_STATE_MISMATCH);
-            } else if (data->internal_state != EAP_NOOB_STATE_INTERNAL_PEERID_SENT) {
-                to_return = build_error_msg(reqData, EAP_NOOB_ERROR_UNEXPECTED_MESSAGE_TYPE);
-            } else {
-                to_return = eap_noob_handle_type_7(sm, data, ret, reqData, recvContent);
-            }
-            break;
-        case EAP_NOOB_MSG_TYPE_RECONNECT_ECHDE_EXCHANGE:
-            // Exchange of ECDHE keys and nonces
-            to_return = eap_noob_handle_type_8(sm, data, ret, reqData, recvContent);
-            break;
-        case EAP_NOOB_MSG_TYPE_RECONNECT_AUTHENTICATION:
-            // Authentication and key confirmation with HMAC
-            to_return = eap_noob_handle_type_9(sm, data, ret, reqData, recvContent);
-            break;
-        default:
-            // Unknown message type.
+    switch (type) {
+    case EAP_NOOB_MSG_TYPE_ERROR_NOTIFICATION:
+        // Error message
+        goto ignore;
+    case EAP_NOOB_MSG_TYPE_PEERID_AND_STATE_DISCOVERY:
+        // PeerId and PeerState discovery
+        if (data->internal_state != EAP_NOOB_STATE_INTERNAL_IDENTITY_SENT) {
             to_return = build_error_msg(reqData, EAP_NOOB_ERROR_UNEXPECTED_MESSAGE_TYPE);
+        } else {
+            to_return = eap_noob_handle_type_1(sm, data, ret, reqData, recvContent);
+        }
+        break;
+    case EAP_NOOB_MSG_TYPE_INITIAL_VERSION_NEGOTIATION:
+        // Version, cryptosuite, and parameter negotiation
+        if (g_wpa_eap_noob_state.noob_state == EAP_NOOB_STATE_REGISTERED ||
+                g_wpa_eap_noob_state.noob_state == EAP_NOOB_STATE_RECONNECTING
+           ) {
+            to_return = build_error_msg(reqData, EAP_NOOB_ERROR_STATE_MISMATCH);
+        } else if (data->internal_state != EAP_NOOB_STATE_INTERNAL_PEERID_SENT) {
+            to_return = build_error_msg(reqData, EAP_NOOB_ERROR_UNEXPECTED_MESSAGE_TYPE);
+        } else {
+            to_return = eap_noob_handle_type_2(sm, data, ret, reqData, recvContent);
+        }
+        break;
+    case EAP_NOOB_MSG_TYPE_INITIAL_ECDHE_EXCHANGE:
+        // Exchange of ECDHE keys and nonces
+        if (data->internal_state != EAP_NOOB_STATE_INTERNAL_VERSION_NEGOTIATION_SENT) {
+            to_return = build_error_msg(reqData, EAP_NOOB_ERROR_UNEXPECTED_MESSAGE_TYPE);
+        } else {
+            to_return = eap_noob_handle_type_3(sm, data, ret, reqData, recvContent);
+        }
+        break;
+    case EAP_NOOB_MSG_TYPE_WAITING:
+        // Indication to the peer that the server has not yet received an OOB message
+        if (g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_WAITING_FOR_OOB &&
+                g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_OOB_RECEIVED
+           ) {
+            to_return = build_error_msg(reqData, EAP_NOOB_ERROR_STATE_MISMATCH);
+        } else if (data->internal_state != EAP_NOOB_STATE_INTERNAL_PEERID_SENT) {
+            to_return = build_error_msg(reqData, EAP_NOOB_ERROR_UNEXPECTED_MESSAGE_TYPE);
+        } else {
+            to_return = eap_noob_handle_type_4(sm, data, ret, reqData, recvContent);
+        }
+        break;
+    case EAP_NOOB_MSG_TYPE_COMPLETION_NOOBID_DISCOVERY:
+        // NoobId discovery
+        if (g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_WAITING_FOR_OOB &&
+                g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_OOB_RECEIVED
+           ) {
+            to_return = build_error_msg(reqData, EAP_NOOB_ERROR_STATE_MISMATCH);
+        } else if (data->internal_state != EAP_NOOB_STATE_INTERNAL_PEERID_SENT) {
+            to_return = build_error_msg(reqData, EAP_NOOB_ERROR_UNEXPECTED_MESSAGE_TYPE);
+        } else {
+            to_return = eap_noob_handle_type_5(sm, data, ret, reqData, recvContent);
+        }
+        break;
+    case EAP_NOOB_MSG_TYPE_COMPLETION_AUTHENTICATION:
+        // Authentication and key confirmation with HMAC
+        if (g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_WAITING_FOR_OOB &&
+                g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_OOB_RECEIVED
+           ) {
+            to_return = build_error_msg(reqData, EAP_NOOB_ERROR_STATE_MISMATCH);
+        } else if (data->internal_state != EAP_NOOB_STATE_INTERNAL_PEERID_SENT &&
+                   data->internal_state != EAP_NOOB_STATE_INTERNAL_NOOBID_DISCOVERY_SENT
+                  ) {
+            to_return = build_error_msg(reqData, EAP_NOOB_ERROR_UNEXPECTED_MESSAGE_TYPE);
+        } else {
+            to_return = eap_noob_handle_type_6(sm, data, ret, reqData, recvContent);
+        }
+        break;
+    case EAP_NOOB_MSG_TYPE_RECONNECT_VERSION_NEGOTIATION:
+        // Version, cryptosuite, and parameter negotiation
+        if (g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_REGISTERED &&
+                g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_RECONNECTING
+           ) {
+            to_return = build_error_msg(reqData, EAP_NOOB_ERROR_STATE_MISMATCH);
+        } else if (data->internal_state != EAP_NOOB_STATE_INTERNAL_PEERID_SENT) {
+            to_return = build_error_msg(reqData, EAP_NOOB_ERROR_UNEXPECTED_MESSAGE_TYPE);
+        } else {
+            to_return = eap_noob_handle_type_7(sm, data, ret, reqData, recvContent);
+        }
+        break;
+    case EAP_NOOB_MSG_TYPE_RECONNECT_ECHDE_EXCHANGE:
+        // Exchange of ECDHE keys and nonces
+        to_return = eap_noob_handle_type_8(sm, data, ret, reqData, recvContent);
+        break;
+    case EAP_NOOB_MSG_TYPE_RECONNECT_AUTHENTICATION:
+        // Authentication and key confirmation with HMAC
+        to_return = eap_noob_handle_type_9(sm, data, ret, reqData, recvContent);
+        break;
+    default:
+        // Unknown message type.
+        to_return = build_error_msg(reqData, EAP_NOOB_ERROR_UNEXPECTED_MESSAGE_TYPE);
     }
 send_wpabuf:
-    if(recvContent != NULL)
+    if (recvContent != NULL) {
         cJSON_Delete(recvContent);
+    }
     return to_return;
 
 ignore:
-    if(recvContent != NULL)
+    if (recvContent != NULL) {
         cJSON_Delete(recvContent);
+    }
     ret->ignore = true;
     return NULL;
 
 }
-static bool eap_noob_isKeyAvailable(struct eap_sm *sm, void *priv){
+static bool eap_noob_isKeyAvailable(struct eap_sm *sm, void *priv)
+{
     struct eap_noob_data *data = priv;
     return data->internal_state == EAP_NOOB_STATE_INTERNAL_MACP_SENT;
 }
-static u8 *eap_noob_getKey(struct eap_sm *sm, void *priv, size_t *len){
-    if(!eap_noob_isKeyAvailable(sm, priv))
+static u8 *eap_noob_getKey(struct eap_sm *sm, void *priv, size_t *len)
+{
+    if (!eap_noob_isKeyAvailable(sm, priv)) {
         return NULL;
+    }
 
     struct eap_noob_data *data = priv;
     u8 *msk = os_zalloc(64);
@@ -1181,9 +1265,11 @@ static u8 *eap_noob_getKey(struct eap_sm *sm, void *priv, size_t *len){
     *len = 64;
     return msk;
 }
-static u8 *eap_noob_get_emsk(struct eap_sm *sm, void *priv, size_t *len) {
-    if (!eap_noob_isKeyAvailable(sm, priv))
+static u8 *eap_noob_get_emsk(struct eap_sm *sm, void *priv, size_t *len)
+{
+    if (!eap_noob_isKeyAvailable(sm, priv)) {
         return NULL;
+    }
 
     struct eap_noob_data *data = priv;
     u8 *emsk = os_zalloc(64);
@@ -1192,13 +1278,15 @@ static u8 *eap_noob_get_emsk(struct eap_sm *sm, void *priv, size_t *len) {
     return emsk;
 }
 
-int eap_peer_noob_register(void){
+int eap_peer_noob_register(void)
+{
     struct eap_method *eap;
     int ret;
 
     eap = eap_peer_method_alloc(EAP_VENDOR_IETF, EAP_TYPE_NOOB, "NOOB");
-    if (eap == NULL)
+    if (eap == NULL) {
         return -1;
+    }
 
     eap->init = eap_noob_init;
     eap->deinit = eap_noob_deinit;
@@ -1208,7 +1296,8 @@ int eap_peer_noob_register(void){
     eap->get_emsk = eap_noob_get_emsk;
 
     ret = eap_peer_method_register(eap);
-    if(ret)
+    if (ret) {
         eap_peer_method_free(eap);
+    }
     return ret;
 }

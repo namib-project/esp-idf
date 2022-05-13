@@ -11,14 +11,8 @@ typedef enum {
     EAP_NOOB_STATE_OOB_RECEIVED = 2,
     EAP_NOOB_STATE_RECONNECTING = 3,
     EAP_NOOB_STATE_REGISTERED = 4
-} eap_noob_state_machine;
-/*
-enum {
-    EAP_NOOB_OOB_DIRECTION_PEER_TO_SERVER = 1,
-    EAP_NOOB_OOB_DIRECTION_SERVER_TO_PEER = 2,
-    EAP_NOOB_OOB_DIRECTION_BOTH = EAP_NOOB_OOB_DIRECTION_PEER_TO_SERVER ^ EAP_NOOB_OOB_DIRECTION_SERVER_TO_PEER
-};
-*/
+} eap_noob_state_machine_t;
+
 typedef struct eap_noob_oob_msg_node {
     struct eap_noob_oob_msg *value;
     struct eap_noob_oob_msg_node *next;
@@ -37,7 +31,7 @@ struct eap_noob_state {
     bool active;
     bool persistent;
     u8 supported_dir; // 0x01 Peer->Server 0x02 Server->Peer, XOR
-    eap_noob_state_machine noob_state;
+    eap_noob_state_machine_t noob_state;
     char *peer_id; // String, 0-byte terminated!
     int version;
     int cryptosuite;

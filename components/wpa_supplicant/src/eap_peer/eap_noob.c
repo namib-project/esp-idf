@@ -138,6 +138,7 @@ static u8 *eap_noob_calculate_hoob(eap_noob_oob_msg_t *oobMsg)
     free(hoob_src);
     return hash_ret;
 }
+
 static void eap_noob_calculate_noobid(eap_noob_oob_msg_t *oobMsg)
 {
 
@@ -425,11 +426,10 @@ static void eap_noob_calculate_kdf(u8 *out, size_t len, u8 *z, size_t z_len, u8 
             curptr = len;
         }
     }
-
 }
+
 static struct eap_noob_cryptographic_material *eap_noob_calculate_cryptographic_elements(struct eap_noob_data *data, int keyingmode, u8 *kz)
 {
-
     if (keyingmode != EAP_NOOB_KEYINGMODE_COMPLETION && kz == NULL) {
         return NULL;
     }
@@ -530,6 +530,7 @@ static struct wpabuf *eap_noob_handle_type_1(struct eap_sm *sm, struct eap_noob_
     data->internal_state = EAP_NOOB_STATE_INTERNAL_PEERID_SENT;
     return to_return;
 }
+
 static struct wpabuf *eap_noob_handle_type_2(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json)
 {
     //<editor-fold desc="Parse incoming packet">
@@ -668,6 +669,7 @@ static struct wpabuf *eap_noob_handle_type_2(struct eap_sm *sm, struct eap_noob_
     data->internal_state = EAP_NOOB_STATE_INTERNAL_VERSION_NEGOTIATION_SENT;
     return to_return;
 }
+
 static struct wpabuf *eap_noob_handle_type_3(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json)
 {
     //<editor-fold desc="Parse incoming JSON">
@@ -809,6 +811,7 @@ static struct wpabuf *eap_noob_handle_type_3(struct eap_sm *sm, struct eap_noob_
     data->internal_state = EAP_NOOB_STATE_INTERNAL_PUBKEY_SENT;
     return to_return;
 }
+
 static struct wpabuf *eap_noob_handle_type_4(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json)
 {
     // TODO Actually parse the waiting exchange
@@ -833,6 +836,7 @@ static struct wpabuf *eap_noob_handle_type_4(struct eap_sm *sm, struct eap_noob_
 
     return to_return;
 }
+
 static struct wpabuf *eap_noob_handle_type_5(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json)
 {
     // TODO: Parse incoming message
@@ -874,6 +878,7 @@ static struct wpabuf *eap_noob_handle_type_5(struct eap_sm *sm, struct eap_noob_
 
     return to_return;
 }
+
 static struct wpabuf *eap_noob_handle_type_6(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json)
 {
     //<editor-fold desc="Parse incoming JSON">
@@ -971,20 +976,24 @@ static struct wpabuf *eap_noob_handle_type_6(struct eap_sm *sm, struct eap_noob_
 
     return to_return;
 }
+
 static struct wpabuf *eap_noob_handle_type_7(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json)
 {
     return NULL;
 }
+
 static struct wpabuf *eap_noob_handle_type_8(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json)
 {
     return NULL;
 }
+
 static struct wpabuf *eap_noob_handle_type_9(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json)
 {
     return NULL;
 }
 
 static void eap_noob_deinit(struct eap_sm *sm, void *priv);
+
 static void *eap_noob_init(struct eap_sm *sm)
 {
     // IF the global eap_noob state is not in active mode, we won't try to do EAP-NOOB.
@@ -1030,6 +1039,7 @@ static void *eap_noob_init(struct eap_sm *sm)
 
     return data;
 }
+
 static void eap_noob_deinit(struct eap_sm *sm, void *priv)
 {
     struct eap_noob_data *data = priv;
@@ -1108,6 +1118,7 @@ static void eap_noob_deinit(struct eap_sm *sm, void *priv)
 
     os_free(data);
 }
+
 static struct wpabuf *eap_noob_process(struct eap_sm *sm, void *priv, struct eap_method_ret *ret, const struct wpabuf *reqData)
 {
     size_t len;
@@ -1248,11 +1259,13 @@ ignore:
     return NULL;
 
 }
+
 static bool eap_noob_isKeyAvailable(struct eap_sm *sm, void *priv)
 {
     struct eap_noob_data *data = priv;
     return data->internal_state == EAP_NOOB_STATE_INTERNAL_MACP_SENT;
 }
+
 static u8 *eap_noob_getKey(struct eap_sm *sm, void *priv, size_t *len)
 {
     if (!eap_noob_isKeyAvailable(sm, priv)) {
@@ -1265,6 +1278,7 @@ static u8 *eap_noob_getKey(struct eap_sm *sm, void *priv, size_t *len)
     *len = 64;
     return msk;
 }
+
 static u8 *eap_noob_get_emsk(struct eap_sm *sm, void *priv, size_t *len)
 {
     if (!eap_noob_isKeyAvailable(sm, priv)) {

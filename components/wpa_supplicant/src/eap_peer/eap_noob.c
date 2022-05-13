@@ -61,6 +61,19 @@ typedef enum {
     EAP_NOOB_STATE_INTERNAL_RECONNECT_PUBKEY_SENT, // Response to type 8
 } eap_noob_internal_state;
 
+enum {
+    EAP_NOOB_MSG_TYPE_ERROR_NOTIFICATION = 0,
+    EAP_NOOB_MSG_TYPE_PEERID_AND_STATE_DISCOVERY = 1,
+    EAP_NOOB_MSG_TYPE_INITIAL_VERSION_NEGOTIATION = 2,
+    EAP_NOOB_MSG_TYPE_INITIAL_ECDHE_EXCHANGE = 3,
+    EAP_NOOB_MSG_TYPE_WAITING = 4,
+    EAP_NOOB_MSG_TYPE_COMPLETION_NOOBID_DISCOVERY = 5,
+    EAP_NOOB_MSG_TYPE_COMPLETION_AUTHENTICATION = 6,
+    EAP_NOOB_MSG_TYPE_RECONNECT_VERSION_NEGOTIATION = 7,
+    EAP_NOOB_MSG_TYPE_RECONNECT_ECHDE_EXCHANGE = 8,
+    EAP_NOOB_MSG_TYPE_RECONNECT_AUTHENTICATION = 9,
+};
+
 struct eap_noob_cryptographic_material {
     u8 kdf_out[320];
     size_t kdf_len;
@@ -444,7 +457,7 @@ static struct eap_noob_cryptographic_material *eap_noob_calculate_cryptographic_
 static struct wpabuf *build_error_msg(const struct wpabuf *reqData, int error_code){
     //<editor-fold desc="Build response JSON structure">
     cJSON *ret_json = cJSON_CreateObject();
-    cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(0));
+    cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(EAP_NOOB_MSG_TYPE_ERROR_NOTIFICATION));
     cJSON_AddItemToObject(ret_json, "ErrorCode", cJSON_CreateNumber(error_code));
     //</editor-fold>
 
@@ -466,7 +479,7 @@ static struct wpabuf * eap_noob_handle_type_1(struct eap_sm *sm, struct eap_noob
     //<editor-fold desc="Build response JSON structure">
     // Reply with Type 1
     cJSON *ret_json = cJSON_CreateObject();
-    cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(1));
+    cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(EAP_NOOB_MSG_TYPE_PEERID_AND_STATE_DISCOVERY));
     cJSON_AddItemToObject(ret_json, "PeerState", cJSON_CreateNumber(g_wpa_eap_noob_state.noob_state));
     if(data->peer_id){
         cJSON_AddItemToObject(ret_json, "PeerId", cJSON_CreateStringReference(data->peer_id));
@@ -586,7 +599,7 @@ static struct wpabuf * eap_noob_handle_type_2(struct eap_sm *sm, struct eap_noob
 
     //<editor-fold desc="Build response JSON structure">
     cJSON *ret_json = cJSON_CreateObject();
-    cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(2));
+    cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(EAP_NOOB_MSG_TYPE_INITIAL_VERSION_NEGOTIATION));
 
     cJSON *ret_verp = cJSON_CreateNumber(1);
     data->verp = cJSON_PrintUnformatted(ret_verp);
@@ -721,7 +734,7 @@ static struct wpabuf * eap_noob_handle_type_3(struct eap_sm *sm, struct eap_noob
     //<editor-fold desc="Build response JSON structure">
     // Build Reply Type 3
     cJSON *ret_json = cJSON_CreateObject();
-    cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(3));
+    cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(EAP_NOOB_MSG_TYPE_INITIAL_ECDHE_EXCHANGE));
     cJSON_AddItemToObject(ret_json, "PeerId", cJSON_CreateStringReference(data->peer_id));
 
     cJSON *ret_pkp = cJSON_CreateObject();
@@ -759,7 +772,7 @@ static struct wpabuf * eap_noob_handle_type_4(struct eap_sm *sm, struct eap_noob
     //<editor-fold desc="Build response JSON structure">
     // Reply with Type 4
     cJSON *ret_json = cJSON_CreateObject();
-    cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(4));
+    cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(EAP_NOOB_MSG_TYPE_WAITING));
     cJSON_AddItemToObject(ret_json, "PeerId", cJSON_CreateStringReference(data->peer_id));
     //</editor-fold>
 
@@ -797,7 +810,7 @@ static struct wpabuf * eap_noob_handle_type_5(struct eap_sm *sm, struct eap_noob
 
     //<editor-fold desc="Build response JSON structure">
     cJSON *ret_json = cJSON_CreateObject();
-    cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(5));
+    cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(EAP_NOOB_MSG_TYPE_COMPLETION_NOOBID_DISCOVERY));
     cJSON_AddItemToObject(ret_json, "PeerId", cJSON_CreateStringReference(data->peer_id));
     cJSON_AddItemToObject(ret_json, "NoobId", cJSON_CreateString(noobid));
     //</editor-fold>
@@ -893,7 +906,7 @@ static struct wpabuf * eap_noob_handle_type_6(struct eap_sm *sm, struct eap_noob
     //<editor-fold desc="Build response JSON structure">
     cJSON *ret_json = cJSON_CreateObject();
 
-    cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(6));
+    cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(EAP_NOOB_MSG_TYPE_COMPLETION_AUTHENTICATION));
     cJSON_AddItemToObject(ret_json, "PeerId", cJSON_CreateStringReference(data->peer_id));
     cJSON_AddItemToObject(ret_json, "MACp", cJSON_CreateString(macp_base64));
     //</editor-fold>
@@ -1049,10 +1062,10 @@ static struct wpabuf *eap_noob_process(struct eap_sm *sm, void *priv, struct eap
     int type = parsed_type->valueint;
 
     switch(type) {
-        case 0:
+        case EAP_NOOB_MSG_TYPE_ERROR_NOTIFICATION:
             // Error message
             goto ignore;
-        case 1:
+        case EAP_NOOB_MSG_TYPE_PEERID_AND_STATE_DISCOVERY:
             // PeerId and PeerState discovery
             if (data->internal_state != EAP_NOOB_STATE_INTERNAL_IDENTITY_SENT) {
                 to_return = build_error_msg(reqData, EAP_NOOB_ERROR_UNEXPECTED_MESSAGE_TYPE);
@@ -1060,7 +1073,7 @@ static struct wpabuf *eap_noob_process(struct eap_sm *sm, void *priv, struct eap
                 to_return = eap_noob_handle_type_1(sm, data, ret, reqData, recvContent);
             }
             break;
-        case 2:
+        case EAP_NOOB_MSG_TYPE_INITIAL_VERSION_NEGOTIATION:
             // Version, cryptosuite, and parameter negotiation
             if (g_wpa_eap_noob_state.noob_state == EAP_NOOB_STATE_REGISTERED ||
                 g_wpa_eap_noob_state.noob_state == EAP_NOOB_STATE_RECONNECTING
@@ -1072,7 +1085,7 @@ static struct wpabuf *eap_noob_process(struct eap_sm *sm, void *priv, struct eap
                 to_return = eap_noob_handle_type_2(sm, data, ret, reqData, recvContent);
             }
             break;
-        case 3:
+        case EAP_NOOB_MSG_TYPE_INITIAL_ECDHE_EXCHANGE:
             // Exchange of ECDHE keys and nonces
             if (data->internal_state != EAP_NOOB_STATE_INTERNAL_VERSION_NEGOTIATION_SENT) {
                 to_return = build_error_msg(reqData, EAP_NOOB_ERROR_UNEXPECTED_MESSAGE_TYPE);
@@ -1080,7 +1093,7 @@ static struct wpabuf *eap_noob_process(struct eap_sm *sm, void *priv, struct eap
                 to_return = eap_noob_handle_type_3(sm, data, ret, reqData, recvContent);
             }
             break;
-        case 4:
+        case EAP_NOOB_MSG_TYPE_WAITING:
             // Indication to the peer that the server has not yet received an OOB message
             if (g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_WAITING_FOR_OOB &&
                 g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_OOB_RECEIVED
@@ -1092,7 +1105,7 @@ static struct wpabuf *eap_noob_process(struct eap_sm *sm, void *priv, struct eap
                 to_return = eap_noob_handle_type_4(sm, data, ret, reqData, recvContent);
             }
             break;
-        case 5:
+        case EAP_NOOB_MSG_TYPE_COMPLETION_NOOBID_DISCOVERY:
             // NoobId discovery
             if (g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_WAITING_FOR_OOB &&
                 g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_OOB_RECEIVED
@@ -1104,7 +1117,7 @@ static struct wpabuf *eap_noob_process(struct eap_sm *sm, void *priv, struct eap
                 to_return = eap_noob_handle_type_5(sm, data, ret, reqData, recvContent);
             }
             break;
-        case 6:
+        case EAP_NOOB_MSG_TYPE_COMPLETION_AUTHENTICATION:
             // Authentication and key confirmation with HMAC
             if (g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_WAITING_FOR_OOB &&
                 g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_OOB_RECEIVED
@@ -1118,7 +1131,7 @@ static struct wpabuf *eap_noob_process(struct eap_sm *sm, void *priv, struct eap
                 to_return = eap_noob_handle_type_6(sm, data, ret, reqData, recvContent);
             }
             break;
-        case 7:
+        case EAP_NOOB_MSG_TYPE_RECONNECT_VERSION_NEGOTIATION:
             // Version, cryptosuite, and parameter negotiation
             if (g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_REGISTERED &&
                 g_wpa_eap_noob_state.noob_state != EAP_NOOB_STATE_RECONNECTING
@@ -1130,11 +1143,11 @@ static struct wpabuf *eap_noob_process(struct eap_sm *sm, void *priv, struct eap
                 to_return = eap_noob_handle_type_7(sm, data, ret, reqData, recvContent);
             }
             break;
-        case 8:
+        case EAP_NOOB_MSG_TYPE_RECONNECT_ECHDE_EXCHANGE:
             // Exchange of ECDHE keys and nonces
             to_return = eap_noob_handle_type_8(sm, data, ret, reqData, recvContent);
             break;
-        case 9:
+        case EAP_NOOB_MSG_TYPE_RECONNECT_AUTHENTICATION:
             // Authentication and key confirmation with HMAC
             to_return = eap_noob_handle_type_9(sm, data, ret, reqData, recvContent);
             break;

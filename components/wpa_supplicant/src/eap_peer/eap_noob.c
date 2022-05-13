@@ -406,10 +406,10 @@ static void eap_noob_calculate_kdf(u8 *out, size_t len, u8 *z, size_t z_len, u8 
     memcpy(kdf_input + 4 + z_len + 8 + 32, party_v_info, 32);
     memcpy(kdf_input + 4 + z_len + 8 + 64, supp_priv_info, supp_priv_info_len);
 
-    size_t curptr = 0;
+    size_t cur_ptr = 0;
     u32 id = 1;
     u8 kdf_out[32];
-    while (curptr < len) {
+    while (cur_ptr < len) {
         kdf_input[0] = id >> 24;
         kdf_input[1] = id >> 16;
         kdf_input[2] = id >> 8;
@@ -418,12 +418,12 @@ static void eap_noob_calculate_kdf(u8 *out, size_t len, u8 *z, size_t z_len, u8 
 
         mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), kdf_input, kdf_len, kdf_out);
 
-        if (curptr + 32 <= len) {
-            memcpy(out + curptr, kdf_out, 32);
-            curptr += 32;
+        if (cur_ptr + 32 <= len) {
+            memcpy(out + cur_ptr, kdf_out, 32);
+            cur_ptr += 32;
         } else {
-            memcpy(out + curptr, kdf_out, len - curptr);
-            curptr = len;
+            memcpy(out + cur_ptr, kdf_out, len - cur_ptr);
+            cur_ptr = len;
         }
     }
 }

@@ -18,7 +18,7 @@
 
 struct eap_noob_state g_wpa_eap_noob_state;
 
-enum {
+typedef enum {
     EAP_NOOB_ERROR_INVALID_NAI = 1001,
     EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE = 1002,
     EAP_NOOB_ERROR_INVALID_DATA = 1003,
@@ -40,14 +40,14 @@ enum {
     EAP_NOOB_ERROR_INVALID_SERVER_INFO = 5002,
     EAP_NOOB_ERROR_INVALID_SERVER_URL = 5003,
     EAP_NOOB_ERROR_INVALID_PEER_INFO = 5004,
-};
+} eap_noob_error_types_t;
 
-enum {
+typedef enum {
     EAP_NOOB_KEYINGMODE_COMPLETION = 0,
     EAP_NOOB_KEYINGMODE_RECONNECT_WITHOUT_ECDHE = 1,
     EAP_NOOB_KEYINGMODE_RECONNECT_WITH_ECDHE = 2,
     EAP_NOOB_KEYINGMODE_RECONNECT_CRYPTOSUITE_UPDATE = 3
-};
+} eap_noob_keyingmodes_t;
 
 typedef enum {
     EAP_NOOB_STATE_INTERNAL_IDENTITY_SENT,
@@ -59,9 +59,9 @@ typedef enum {
     EAP_NOOB_STATE_INTERNAL_MACP_SENT, // Response to Type 6
     EAP_NOOB_STATE_INTERNAL_RECONNECT_VERSION_NEGOTIATION_SENT, // Response to Type 7
     EAP_NOOB_STATE_INTERNAL_RECONNECT_PUBKEY_SENT, // Response to type 8
-} eap_noob_internal_state;
+} eap_noob_internal_state_t;
 
-enum {
+typedef enum {
     EAP_NOOB_MSG_TYPE_ERROR_NOTIFICATION = 0,
     EAP_NOOB_MSG_TYPE_PEERID_AND_STATE_DISCOVERY = 1,
     EAP_NOOB_MSG_TYPE_INITIAL_VERSION_NEGOTIATION = 2,
@@ -72,7 +72,7 @@ enum {
     EAP_NOOB_MSG_TYPE_RECONNECT_VERSION_NEGOTIATION = 7,
     EAP_NOOB_MSG_TYPE_RECONNECT_ECHDE_EXCHANGE = 8,
     EAP_NOOB_MSG_TYPE_RECONNECT_AUTHENTICATION = 9,
-};
+} eap_noob_message_types_t;
 
 struct eap_noob_cryptographic_material {
     u8 kdf_out[320];
@@ -82,7 +82,7 @@ struct eap_noob_cryptographic_material {
 };
 
 struct eap_noob_data {
-    eap_noob_internal_state internal_state;
+    eap_noob_internal_state_t internal_state;
     char *nai; // String, 0-byte terminated
     char *peer_id; // String, 0-byte terminated
     u8 ns[32];
@@ -980,16 +980,183 @@ static struct wpabuf *eap_noob_handle_type_6(struct eap_sm *sm, struct eap_noob_
 
 static struct wpabuf *eap_noob_handle_type_7(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json)
 {
-    return NULL;
+    //<editor-fold desc="Parse incoming JSON">
+    cJSON *parsed_peerid = cJSON_GetObjectItemCaseSensitive(json, "PeerId");
+    if (!cJSON_IsString(parsed_peerid)) {
+        wpa_printf(MSG_INFO, "EAP-NOOB: PeerID was not a string");
+        return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
+    }
+
+    cJSON *parsed_vers = cJSON_GetObjectItemCaseSensitive(json, "Vers");
+    if (!cJSON_IsArray(parsed_vers)) {
+        wpa_printf(MSG_INFO, "EAP-NOOB: Vers was not an array");
+        return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
+    }
+    cJSON *parsed_vers_item;
+    bool compatible = false;
+    cJSON_ArrayForEach(parsed_vers_item, parsed_vers) {
+        if (!cJSON_IsNumber(parsed_vers_item)) {
+            return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
+        }
+        // TODO Currently this is fixed on protocol version 1
+        if (parsed_vers_item->valueint == 1) {
+            compatible = true;
+        }
+    }
+    if (!compatible) {
+        wpa_printf(MSG_INFO, "EAP-NOOB: No mutually supported version");
+        return build_error_msg(reqData, EAP_NOOB_ERROR_NO_MUTUALLY_SUPPORTED_PROTOCOL_VERSION);
+    }
+    data->vers = cJSON_PrintUnformatted(parsed_vers);
+
+    cJSON *parsed_cryptosuites = cJSON_GetObjectItemCaseSensitive(json, "Cryptosuites");
+    if (!cJSON_IsArray(parsed_cryptosuites)) {
+        wpa_printf(MSG_INFO, "EAP-NOOB: Cryptosuites was not an array");
+        return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
+    }
+    cJSON *parsed_cryptosuite_item;
+    compatible = false;
+    cJSON_ArrayForEach(parsed_cryptosuite_item, parsed_cryptosuites) {
+        if (!cJSON_IsNumber(parsed_cryptosuite_item)) {
+            return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
+        }
+        // TODO Currently fixed on cryptosuite value "1" (which is Curve25519 with SHA2)
+        if (parsed_cryptosuite_item->valueint == 1) {
+            compatible = true;
+        }
+    }
+    if (!compatible) {
+        wpa_printf(MSG_INFO, "EAP-NOOB: No mutually supported cryptosuite");
+        return build_error_msg(reqData, EAP_NOOB_ERROR_NO_MUTUALLY_SUPPORTED_CRYPTOSUITE);
+    }
+    data->cryptosuites = cJSON_PrintUnformatted(parsed_cryptosuites);
+
+    cJSON *parsed_newnai = cJSON_GetObjectItemCaseSensitive(json, "NewNAI");
+    if (parsed_newnai == NULL) {
+        wpa_printf(MSG_DEBUG, "EAP-NOOB: No NewNAI");
+    } else {
+        if (!cJSON_IsString(parsed_newnai)) {
+            wpa_printf(MSG_INFO, "EAP-NOOB: NewNAI was not a string");
+            return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
+        }
+        wpa_printf(MSG_INFO, "EAP-NOOB: NewNAI is set, updating");
+        if (data->nai) {
+            os_free(data->nai);
+        }
+        len = strlen(parsed_newnai->valuestring);
+        data->nai = os_zalloc(len + 1);
+        strcpy(data->nai, parsed_newnai->valuestring);
+    }
+
+    cJSON *parsed_serverinfo = cJSON_GetObjectItemCaseSensitive(json, "ServerInfo");
+    if(parsed_serverinfo == NULL) {
+        cJSON emptystring = cJSON_CreateString("");
+        data->server_info = cJSON_PrintUnformatted(emptystring);
+        cJSON_Delete(emptystring);
+    } else {
+        if (!cJSON_IsObject(parsed_serverinfo)) {
+            wpa_printf(MSG_INFO, "EAP-NOOB: ServerInfo was not a JSON Object");
+            return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
+        }
+        data->server_info = cJSON_PrintUnformatted(parsed_serverinfo);
+    }
+    //</editor-fold>
+
+    //<editor-fold desc="Build response JSON structure">
+    cJSON *ret_json = cJSON_CreateObject();
+
+    cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(EAP_NOOB_MSG_TYPE_RECONNECT_VERSION_NEGOTIATION));
+
+    cJSON *ret_verp = cJSON_CreateNumber(1);
+    data->verp = cJSON_PrintUnformatted(ret_verp);
+    cJSON_AddItemToObject(ret_json, "Verp", ret_verp);
+
+    cJSON_AddItemToObject(ret_json, "PeerId", cJSON_CreateStringReference(data->peer_id));
+
+    cJSON *ret_cryptosuitep = cJSON_CreateNumber(1);
+    data->cryptosuitep = cJSON_PrintUnformatted(ret_cryptosuitep);
+    cJSON_AddItemToObject(ret_json, "Cryptosuitep", ret_cryptosuitep);
+    //</editor-fold>
+
+    //<editor-fold desc="Build response wpabuf packet">
+    char *return_json = cJSON_PrintUnformatted(ret_json);
+    cJSON_Delete(ret_json);
+    size_t payload_len = strlen(return_json);
+    struct wpabuf *to_return = eap_msg_alloc(EAP_VENDOR_IETF, EAP_TYPE_NOOB, payload_len, EAP_CODE_RESPONSE, eap_get_id(reqData));
+    wpabuf_put_data(to_return, return_json, payload_len);
+    os_free(return_json);
+    //</editor-fold>
+
+    data->internal_state = EAP_NOOB_STATE_INTERNAL_RECONNECT_VERSION_NEGOTIATION_SENT;
+    return to_return;
 }
 
 static struct wpabuf *eap_noob_handle_type_8(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json)
 {
+    //<editor-fold desc="Parse incoming JSON">
+    cJSON *parsed_peerid = cJSON_GetObjectItemCaseSensitive(json, "PeerId");
+    if (!cJSON_IsString(parsed_peerid)) {
+        wpa_printf(MSG_INFO, "EAP-NOOB: PeerID was not a string");
+        return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
+    }
+
+    cJSON *parsed_keyingmode = cJSON_GetObjectItemCaseSensitive(json, "KeyingMode");
+    if (!cJSON_IsNumber(parsed_keyingmode)) {
+        wpa_printf(MSG_INFO, "EAP-NOOB: KeyingMode was not a number");
+        return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
+    }
+    u8 keyingmode = parsed_keyingmode->valueint;
+
+    cJSON *parsed_pks2 = cJSON_GetObjectItemCaseSensitive(json, "PKs2");
+    if(parsed_pks2 == NULL) {
+        cJSON emptystring = cJSON_CreateString("");
+        data->pks = cJSON_PrintUnformatted(emptystring);
+        cJSON_Delete(emptystring);
+    } else {
+        if(!cJSON_IsObject(parsed_pks2)) {
+            wpa_printf(MSG_INFO, "EAP-NOOB: PKs2 was not an Object");
+            return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
+        }
+        data->pks = cJSON_PrintUnformatted(parsed_pks2);
+    }
+    cJSON *parsed_ns2 = cJSON_GetObjectItemCaseSensitive(json, "Ns2");
+    if(!cJSON_IsString("Ns2")) {
+        wpa_printf(MSG_INFO, "EAP-NOOB: Ns2 was not a string");
+    }
+    size_t base64_len;
+    u8 *ns = base64_url_decode(parsed_ns->valuestring, strlen(parsed_ns2->valuestring), &base64_len);
+    if (base64_len != 32) {
+        wpa_printf(MSG_INFO, "EAP-NOOB: Ns2 was not 32 bytes long");
+        free(ns);
+        return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
+    }
+    data->ns_b = cJSON_PrintUnformatted(parsed_ns2);
+    memcpy(data->ns, ns, 32);
+    free(ns);
+
+    //</editor-fold>
+
+    // Check for the needed parameters depending on the KeyingMode
+    if(keyingmode == EAP_NOOB_KEYINGMODE_RECONNECT_WITH_ECDHE || keyingmode == EAP_NOOB_KEYINGMODE_RECONNECT_CRYPTOSUITE_UPDATE) {
+        if (parsed_pks2 == NULL) {
+            wpa_printf(MSG_INFO, "EAP-NOOB: Keyingmode with ECDHE, but no server Parameters present");
+            return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
+        }
+    }
     return NULL;
 }
 
 static struct wpabuf *eap_noob_handle_type_9(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json)
 {
+    //<editor-fold desc="Parse incoming JSON">
+    cJSON *parsed_peerid = cJSON_GetObjectItemCaseSensitive(json, "PeerId");
+    if (!cJSON_IsString(parsed_peerid)) {
+        wpa_printf(MSG_INFO, "EAP-NOOB: PeerID was not a string");
+        return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
+    }
+
+    cJSON *parsed_macs2 = cJSON_GetObjectItemCaseSensitive(json, "MACs2");
+    //</editor-fold>
     return NULL;
 }
 
@@ -1155,6 +1322,7 @@ static struct wpabuf *eap_noob_process(struct eap_sm *sm, void *priv, struct eap
     switch (type) {
     case EAP_NOOB_MSG_TYPE_ERROR_NOTIFICATION:
         // Error message
+        // TODO at this point the EAP communication should be aborted
         goto ignore;
     case EAP_NOOB_MSG_TYPE_PEERID_AND_STATE_DISCOVERY:
         // PeerId and PeerState discovery

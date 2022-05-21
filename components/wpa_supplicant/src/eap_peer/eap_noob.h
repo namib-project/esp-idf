@@ -35,9 +35,11 @@ struct eap_noob_state {
     char *peer_id; // String, 0-byte terminated!
     int version;
     int cryptosuite;
-    int cryptosuite_prev;
     char *nai; // String, 0-byte terminated!
     u8 kz[32];
+    bool prev_active;
+    int version_prev;
+    int cryptosuite_prev;
     u8 kz_prev[32];
     struct eap_noob_ephemeral_state_info *ephemeral_state;
 };

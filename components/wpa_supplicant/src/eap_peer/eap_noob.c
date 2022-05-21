@@ -91,7 +91,8 @@ struct eap_noob_data {
     size_t shared_key_length;
     eap_noob_oob_msg_t *used_oob_msg;
     struct eap_noob_cryptographic_material *cryptokeys;
-    struct eap_noob_cryptographic_material *cryptokeys2;
+    u8 keyingmode;
+    bool persistent_state_updated;
 
     char *vers; // JSON-Array as String, 0-byte terminated
     char *cryptosuites; // JSON-Array as String, 0-byte terminated
@@ -106,6 +107,127 @@ struct eap_noob_data {
     char *pkp; // JSON-Object as String, 0-byte terminated
     char *np_b; // Base64URL encoded string, 0-byte terminated
 };
+
+/**
+ * Cryptographically secure compare two values with static runtime.
+ * @param one first array to compare
+ * @param two second array to compare
+ * @param len length of the arrays
+ * @return 0 if the arrays are equal, any other value otherwise.
+ */
+static u8 cryptographic_secure_compare(u8 *one, u8 *two, size_t len)
+{
+    u8 mac_check = 0;
+    for (size_t i = 0; i < len; i++) {
+        mac_check |= one[i] ^ two[i];
+    }
+    return mac_check;
+}
+
+static int eap_noob_calculate_ecdhe_keyexchange(cJSON *pks, cJSON **pkp_out, u8 **shared_key_out, size_t *shared_key_length_out)
+{
+    cJSON *ret_pkp = cJSON_CreateObject();
+    *pkp_out = ret_pkp;
+
+    // Parse the x coordinate of the Server's Public Key
+    cJSON *parsed_pks_x = cJSON_GetObjectItemCaseSensitive(pks, "x");
+    if (!cJSON_IsString(parsed_pks_x)) {
+        wpa_printf(MSG_INFO, "EAP-NOOB: PKs.x was not a string");
+        return EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE;
+    }
+
+    size_t base64_len;
+    u8 *otherpubkey_tmp = base64_url_decode(parsed_pks_x->valuestring, strlen(parsed_pks_x->valuestring), &base64_len);
+    if (base64_len != 32) {
+        free(otherpubkey_tmp);
+        return EAP_NOOB_ERROR_INVALID_ECDHE_KEY;
+    }
+    u8 otherpubkey[32];
+    memcpy(otherpubkey, otherpubkey_tmp, 32);
+    free(otherpubkey_tmp);
+
+    // Calculate the X25519 Handshake
+    mbedtls_ecdh_context x25519_ctx;
+    mbedtls_entropy_context entropy;
+    mbedtls_ctr_drbg_context ctr_drbg;
+    mbedtls_ecdh_init( &x25519_ctx );
+    mbedtls_ctr_drbg_init( &ctr_drbg );
+    mbedtls_entropy_init( &entropy );
+
+    int ret_val;
+
+    // Calculate the X25519 private and public key
+    unsigned char mykey[32];
+    const char *mbed_seed = "ecdh";
+
+    mbedtls_ecdh_context_mbed *x25519_ctx_m = &x25519_ctx.MBEDTLS_PRIVATE(ctx).MBEDTLS_PRIVATE(mbed_ecdh);
+    ret_val = mbedtls_ctr_drbg_seed( &ctr_drbg, mbedtls_entropy_func, &entropy, (unsigned char *)mbed_seed, 4);
+    if (ret_val != 0) {
+        return EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR;
+    }
+    ret_val = mbedtls_ecp_group_load( &x25519_ctx_m->MBEDTLS_PRIVATE(grp), MBEDTLS_ECP_DP_CURVE25519);
+    if (ret_val != 0) {
+        return EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR;
+    }
+    ret_val = mbedtls_ecdh_gen_public( &x25519_ctx_m->MBEDTLS_PRIVATE(grp), &x25519_ctx_m->MBEDTLS_PRIVATE(d), &x25519_ctx_m->MBEDTLS_PRIVATE(Q), mbedtls_ctr_drbg_random, &ctr_drbg );
+    if (ret_val != 0) {
+        return EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR;
+    }
+    ret_val = mbedtls_mpi_write_binary_le( &x25519_ctx_m->MBEDTLS_PRIVATE(Q).MBEDTLS_PRIVATE(X), mykey, 32);
+    if (ret_val != 0) {
+        return EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR;
+    }
+
+    // Load public key of the server
+    mbedtls_mpi_lset(&x25519_ctx_m->MBEDTLS_PRIVATE(Qp).MBEDTLS_PRIVATE(Z), 1);
+    ret_val = mbedtls_mpi_read_binary_le(&x25519_ctx_m->MBEDTLS_PRIVATE(Qp).MBEDTLS_PRIVATE(X), otherpubkey, 32);
+    if (ret_val != 0) {
+        return EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR;
+    }
+
+    // Compute shared secret
+    unsigned char sharedkey[32];
+    ret_val = mbedtls_ecdh_compute_shared(&x25519_ctx_m->MBEDTLS_PRIVATE(grp), &x25519_ctx_m->MBEDTLS_PRIVATE(z), &x25519_ctx_m->MBEDTLS_PRIVATE(Qp), &x25519_ctx_m->MBEDTLS_PRIVATE(d), mbedtls_ctr_drbg_random, &ctr_drbg);
+    if (ret_val != 0) {
+        return EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR;
+    }
+    ret_val = mbedtls_mpi_write_binary_le( &x25519_ctx_m->MBEDTLS_PRIVATE(z), sharedkey, 32);
+    if (ret_val != 0) {
+        return EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR;
+    }
+    *shared_key_out = os_zalloc(32);
+    memcpy(*shared_key_out, sharedkey, 32);
+    *shared_key_length_out = 32;
+
+    // Generate cJSON output for peer's public key
+    size_t mykey_b64_len;
+    char *mykey_b64 = base64_url_encode(mykey, 32, &mykey_b64_len);
+    cJSON_AddItemToObject(ret_pkp, "kty", cJSON_CreateString("OKP"));
+    cJSON_AddItemToObject(ret_pkp, "crv", cJSON_CreateString("X25519"));
+    cJSON_AddItemToObject(ret_pkp, "x", cJSON_CreateString(mykey_b64));
+
+    *pkp_out = ret_pkp;
+    return 0;
+}
+
+static int eap_noob_generate_new_nonce(u8 *out, size_t len)
+{
+    mbedtls_entropy_context entropy;
+    mbedtls_entropy_init( &entropy );
+    mbedtls_ctr_drbg_context ctr_drbg;
+    mbedtls_ctr_drbg_init( &ctr_drbg );
+
+    const char *mbed_seed = "npseed";
+    int ret_val = mbedtls_ctr_drbg_seed( &ctr_drbg, mbedtls_entropy_func, &entropy, (unsigned char *)mbed_seed, 6);
+    if (ret_val != 0) {
+        return EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR;
+    }
+    ret_val = mbedtls_ctr_drbg_random(&ctr_drbg, out, len);
+    if (ret_val != 0) {
+        return EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR;
+    }
+    return 0;
+}
 
 static u8 *eap_noob_calculate_hoob(eap_noob_oob_msg_t *oobMsg)
 {
@@ -366,7 +488,7 @@ static void eap_noob_save_ephemeral_state(struct eap_noob_data *data, int keying
     g_wpa_eap_noob_state.noob_state = EAP_NOOB_STATE_WAITING_FOR_OOB;
 }
 
-static void eap_noob_save_persistent_state(struct eap_noob_data *data, u8 *kz)
+static void eap_noob_save_initial_persistent_state(struct eap_noob_data *data, u8 *kz)
 {
     size_t len;
 
@@ -374,6 +496,7 @@ static void eap_noob_save_persistent_state(struct eap_noob_data *data, u8 *kz)
     g_wpa_eap_noob_state.persistent = true;
 
     g_wpa_eap_noob_state.noob_state = EAP_NOOB_STATE_REGISTERED;
+    g_wpa_eap_noob_state.prev_active = false;
 
     if (g_wpa_eap_noob_state.peer_id != NULL) {
         os_free(g_wpa_eap_noob_state.peer_id);
@@ -384,15 +507,32 @@ static void eap_noob_save_persistent_state(struct eap_noob_data *data, u8 *kz)
 
     g_wpa_eap_noob_state.version = 1;
     g_wpa_eap_noob_state.cryptosuite = 1;
-
-    // TODO
-    //   Currently the kz_prev behavior is not supported.
-    //   This includes also the cryptosuite_prev behavior.
-    if (kz != NULL) {
-        memcpy(g_wpa_eap_noob_state.kz, kz, 32);
-    }
+    memcpy(g_wpa_eap_noob_state.kz, kz, 32);
 
     free_ephemeral_state();
+}
+static void eap_noob_flush_persistent_kz_prev(void)
+{
+    g_wpa_eap_noob_state.prev_active = false;
+}
+static void eap_noob_rollback_persistent_kz_prev(void)
+{
+    g_wpa_eap_noob_state.prev_active = false;
+    memcpy(g_wpa_eap_noob_state.kz, g_wpa_eap_noob_state.kz_prev, 32);
+    g_wpa_eap_noob_state.version = g_wpa_eap_noob_state.version_prev;
+    g_wpa_eap_noob_state.cryptosuite = g_wpa_eap_noob_state.cryptosuite_prev;
+}
+static void eap_noob_update_persistent_state(struct eap_noob_data *data, u8 *kz)
+{
+    g_wpa_eap_noob_state.prev_active = true;
+    memcpy(g_wpa_eap_noob_state.kz_prev, g_wpa_eap_noob_state.kz, 32);
+    g_wpa_eap_noob_state.cryptosuite_prev = g_wpa_eap_noob_state.cryptosuite;
+    g_wpa_eap_noob_state.version_prev = g_wpa_eap_noob_state.version;
+
+    memcpy(g_wpa_eap_noob_state.kz, kz, 32);
+    g_wpa_eap_noob_state.version = 1;
+    g_wpa_eap_noob_state.cryptosuite = 1;
+
 }
 
 static void eap_noob_calculate_kdf(u8 *out, size_t len, u8 *z, size_t z_len, u8 *party_u_info, u8 *party_v_info, u8 *supp_priv_info, size_t supp_priv_info_len)
@@ -685,20 +825,6 @@ static struct wpabuf *eap_noob_handle_type_3(struct eap_sm *sm, struct eap_noob_
         wpa_printf(MSG_INFO, "EAP-NOOB: PKs was not an object");
         return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
     }
-    cJSON *parsed_pks_x = cJSON_GetObjectItemCaseSensitive(parsed_pks, "x");
-    if (!cJSON_IsString(parsed_pks_x)) {
-        wpa_printf(MSG_INFO, "EAP-NOOB: PKs.x was not a string");
-        return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
-    }
-    size_t base64_len;
-    u8 *otherpubkey_tmp = base64_url_decode(parsed_pks_x->valuestring, strlen(parsed_pks_x->valuestring), &base64_len);
-    if (base64_len != 32) {
-        free(otherpubkey_tmp);
-        return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_ECDHE_KEY);
-    }
-    u8 otherpubkey[32];
-    memcpy(otherpubkey, otherpubkey_tmp, 32);
-    free(otherpubkey_tmp);
     data->pks = cJSON_PrintUnformatted(parsed_pks);
 
     cJSON *parsed_ns = cJSON_GetObjectItemCaseSensitive(json, "Ns");
@@ -706,6 +832,7 @@ static struct wpabuf *eap_noob_handle_type_3(struct eap_sm *sm, struct eap_noob_
         wpa_printf(MSG_INFO, "EAP-NOOB: Ns was not a string");
         return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
     }
+    size_t base64_len;
     u8 *ns = base64_url_decode(parsed_ns->valuestring, strlen(parsed_ns->valuestring), &base64_len);
     if (base64_len != 32) {
         wpa_printf(MSG_INFO, "EAP-NOOB: Ns was not 32 bytes long");
@@ -720,61 +847,20 @@ static struct wpabuf *eap_noob_handle_type_3(struct eap_sm *sm, struct eap_noob_
     // TODO: actually parse SleepTime
     //</editor-fold>
 
-    // Calculate X25519 Handshake
-    mbedtls_ecdh_context x25519_ctx;
-    mbedtls_entropy_context entropy;
-    mbedtls_ctr_drbg_context ctr_drbg;
-    mbedtls_ecdh_init( &x25519_ctx );
-    mbedtls_ctr_drbg_init( &ctr_drbg );
-    mbedtls_entropy_init( &entropy );
-    int ret_val;
+    cJSON *ret_pkp;
 
-    //<editor-fold desc="Calculate X25519 shared key">
-    unsigned char mykey[32];
-    unsigned char sharedkey[32];
+    int ecdhe_status = eap_noob_calculate_ecdhe_keyexchange(parsed_pks, &ret_pkp, &data->shared_key, &data->shared_key_length);
 
-    mbedtls_ecdh_context_mbed *x25519_ctx_m = &x25519_ctx.MBEDTLS_PRIVATE(ctx).MBEDTLS_PRIVATE(mbed_ecdh);
-
-    const char *mbed_seed = "ecdh";
-    ret_val = mbedtls_ctr_drbg_seed( &ctr_drbg, mbedtls_entropy_func, &entropy, (unsigned char *)mbed_seed, 4);
-    if (ret_val != 0) {
-        return build_error_msg(reqData, EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR);
+    if (ecdhe_status != 0) {
+        cJSON_Delete(ret_pkp);
+        return build_error_msg(reqData, ecdhe_status);
     }
-    ret_val = mbedtls_ecp_group_load( &x25519_ctx_m->MBEDTLS_PRIVATE(grp), MBEDTLS_ECP_DP_CURVE25519 );
-    if (ret_val != 0) {
-        return build_error_msg(reqData, EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR);
-    }
-    ret_val = mbedtls_ecdh_gen_public( &x25519_ctx_m->MBEDTLS_PRIVATE(grp), &x25519_ctx_m->MBEDTLS_PRIVATE(d), &x25519_ctx_m->MBEDTLS_PRIVATE(Q), mbedtls_ctr_drbg_random, &ctr_drbg );
-    if (ret_val != 0) {
-        return build_error_msg(reqData, EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR);
-    }
-    ret_val = mbedtls_mpi_write_binary_le( &x25519_ctx_m->MBEDTLS_PRIVATE(Q).MBEDTLS_PRIVATE(X), mykey, 32);
-    if (ret_val != 0) {
-        return build_error_msg(reqData, EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR);
-    }
+    data->pkp = cJSON_PrintUnformatted(ret_pkp);
 
-
-    size_t mykey_b64_len;
-    char *mykey_b64 = base64_url_encode(mykey, 32, &mykey_b64_len);
-
-    mbedtls_mpi_lset(&x25519_ctx_m->MBEDTLS_PRIVATE(Qp).MBEDTLS_PRIVATE(Z), 1);
-    ret_val = mbedtls_mpi_read_binary_le( &x25519_ctx_m->MBEDTLS_PRIVATE(Qp).MBEDTLS_PRIVATE(X), otherpubkey, 32);
-    ret_val = mbedtls_ecdh_compute_shared( &x25519_ctx_m->MBEDTLS_PRIVATE(grp), &x25519_ctx_m->MBEDTLS_PRIVATE(z), &x25519_ctx_m->MBEDTLS_PRIVATE(Qp), &x25519_ctx_m->MBEDTLS_PRIVATE(d), mbedtls_ctr_drbg_random, &ctr_drbg );
-    if (ret_val != 0) {
-        return build_error_msg(reqData, EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR);
+    int nonce_status = eap_noob_generate_new_nonce(data->np, 32);
+    if (nonce_status != 0) {
+        return build_error_msg(reqData, nonce_status);
     }
-    ret_val = mbedtls_mpi_write_binary_le( &x25519_ctx_m->MBEDTLS_PRIVATE(z), sharedkey, 32);
-    if (ret_val != 0) {
-        return build_error_msg(reqData, EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR);
-    }
-
-    data->shared_key = os_zalloc(32);
-    memcpy(data->shared_key, sharedkey, 32);
-    data->shared_key_length = 32;
-    //</editor-fold>
-
-    // Generate own nonce
-    mbedtls_ctr_drbg_random(&ctr_drbg, data->np, 32);
     char *np_b = base64_url_encode(data->np, 32, &base64_len);
 
     //<editor-fold desc="Build response JSON structure">
@@ -783,11 +869,6 @@ static struct wpabuf *eap_noob_handle_type_3(struct eap_sm *sm, struct eap_noob_
     cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(EAP_NOOB_MSG_TYPE_INITIAL_ECDHE_EXCHANGE));
     cJSON_AddItemToObject(ret_json, "PeerId", cJSON_CreateStringReference(data->peer_id));
 
-    cJSON *ret_pkp = cJSON_CreateObject();
-    cJSON_AddItemToObject(ret_pkp, "kty", cJSON_CreateString("OKP"));
-    cJSON_AddItemToObject(ret_pkp, "crv", cJSON_CreateString("X25519"));
-    cJSON_AddItemToObject(ret_pkp, "x", cJSON_CreateString(mykey_b64));
-    data->pkp = cJSON_PrintUnformatted(ret_pkp);
     cJSON_AddItemToObject(ret_json, "PKp", ret_pkp);
 
     cJSON *ret_np = cJSON_CreateString(np_b);
@@ -920,7 +1001,7 @@ static struct wpabuf *eap_noob_handle_type_6(struct eap_sm *sm, struct eap_noob_
 
     cJSON *parsed_macs = cJSON_GetObjectItemCaseSensitive(json, "MACs");
     if (!cJSON_IsString(parsed_macs)) {
-        wpa_printf(MSG_INFO, "EAP-NOOB: NoobId was not a string");
+        wpa_printf(MSG_INFO, "EAP-NOOB: MACs was not a string");
         return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
     }
     size_t b64_len2;
@@ -933,10 +1014,9 @@ static struct wpabuf *eap_noob_handle_type_6(struct eap_sm *sm, struct eap_noob_
     //</editor-fold>
 
     data->cryptokeys = eap_noob_calculate_cryptographic_elements(data, EAP_NOOB_KEYINGMODE_COMPLETION, NULL);
-    u8 mac_check = 0;
-    for (size_t i = 0; i < 32; i++) {
-        mac_check |= macs[i] ^ data->cryptokeys->macs[i];
-    }
+    // Cryptographic secure (time constant) check for equal MAC
+
+    u8 mac_check = cryptographic_secure_compare(macs, data->cryptokeys->macs, 32);
 
     os_free(macs);
 
@@ -954,7 +1034,7 @@ static struct wpabuf *eap_noob_handle_type_6(struct eap_sm *sm, struct eap_noob_
     //   If we do it this way, we may end up with a persistent state stored, when the server did not move to the
     //   "Registered" state. For now we just live with that.
 
-    eap_noob_save_persistent_state(data, data->cryptokeys->kdf_out + 288);
+    eap_noob_save_initial_persistent_state(data, data->cryptokeys->kdf_out + 288);
 
     //<editor-fold desc="Build response JSON structure">
     cJSON *ret_json = cJSON_CreateObject();
@@ -1043,14 +1123,14 @@ static struct wpabuf *eap_noob_handle_type_7(struct eap_sm *sm, struct eap_noob_
         if (data->nai) {
             os_free(data->nai);
         }
-        len = strlen(parsed_newnai->valuestring);
+        size_t len = strlen(parsed_newnai->valuestring);
         data->nai = os_zalloc(len + 1);
         strcpy(data->nai, parsed_newnai->valuestring);
     }
 
     cJSON *parsed_serverinfo = cJSON_GetObjectItemCaseSensitive(json, "ServerInfo");
-    if(parsed_serverinfo == NULL) {
-        cJSON emptystring = cJSON_CreateString("");
+    if (parsed_serverinfo == NULL) {
+        cJSON *emptystring = cJSON_CreateString("");
         data->server_info = cJSON_PrintUnformatted(emptystring);
         cJSON_Delete(emptystring);
     } else {
@@ -1105,26 +1185,26 @@ static struct wpabuf *eap_noob_handle_type_8(struct eap_sm *sm, struct eap_noob_
         wpa_printf(MSG_INFO, "EAP-NOOB: KeyingMode was not a number");
         return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
     }
-    u8 keyingmode = parsed_keyingmode->valueint;
+    data->keyingmode = parsed_keyingmode->valueint;
 
     cJSON *parsed_pks2 = cJSON_GetObjectItemCaseSensitive(json, "PKs2");
-    if(parsed_pks2 == NULL) {
-        cJSON emptystring = cJSON_CreateString("");
+    if (parsed_pks2 == NULL) {
+        cJSON *emptystring = cJSON_CreateString("");
         data->pks = cJSON_PrintUnformatted(emptystring);
         cJSON_Delete(emptystring);
     } else {
-        if(!cJSON_IsObject(parsed_pks2)) {
+        if (!cJSON_IsObject(parsed_pks2)) {
             wpa_printf(MSG_INFO, "EAP-NOOB: PKs2 was not an Object");
             return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
         }
         data->pks = cJSON_PrintUnformatted(parsed_pks2);
     }
     cJSON *parsed_ns2 = cJSON_GetObjectItemCaseSensitive(json, "Ns2");
-    if(!cJSON_IsString("Ns2")) {
+    if (!cJSON_IsString(parsed_ns2)) {
         wpa_printf(MSG_INFO, "EAP-NOOB: Ns2 was not a string");
     }
     size_t base64_len;
-    u8 *ns = base64_url_decode(parsed_ns->valuestring, strlen(parsed_ns2->valuestring), &base64_len);
+    u8 *ns = base64_url_decode(parsed_ns2->valuestring, strlen(parsed_ns2->valuestring), &base64_len);
     if (base64_len != 32) {
         wpa_printf(MSG_INFO, "EAP-NOOB: Ns2 was not 32 bytes long");
         free(ns);
@@ -1133,17 +1213,53 @@ static struct wpabuf *eap_noob_handle_type_8(struct eap_sm *sm, struct eap_noob_
     data->ns_b = cJSON_PrintUnformatted(parsed_ns2);
     memcpy(data->ns, ns, 32);
     free(ns);
-
     //</editor-fold>
 
     // Check for the needed parameters depending on the KeyingMode
-    if(keyingmode == EAP_NOOB_KEYINGMODE_RECONNECT_WITH_ECDHE || keyingmode == EAP_NOOB_KEYINGMODE_RECONNECT_CRYPTOSUITE_UPDATE) {
+
+    cJSON *ret_json = cJSON_CreateObject();
+
+    if (data->keyingmode == EAP_NOOB_KEYINGMODE_RECONNECT_WITH_ECDHE || data->keyingmode == EAP_NOOB_KEYINGMODE_RECONNECT_CRYPTOSUITE_UPDATE) {
         if (parsed_pks2 == NULL) {
             wpa_printf(MSG_INFO, "EAP-NOOB: Keyingmode with ECDHE, but no server Parameters present");
             return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
         }
+
+        cJSON *ret_pkp;
+
+        int ecdhe_status = eap_noob_calculate_ecdhe_keyexchange(parsed_pks2, &ret_pkp, &data->shared_key, &data->shared_key_length);
+        if (ecdhe_status != 0) {
+            cJSON_Delete(ret_pkp);
+            return build_error_msg(reqData, ecdhe_status);
+        }
+
+        cJSON_AddItemToObject(ret_json, "PKp2", ret_pkp);
     }
-    return NULL;
+
+    int nonce_stats = eap_noob_generate_new_nonce(data->np, 32);
+    if (nonce_stats != 0) {
+        return build_error_msg(reqData, EAP_NOOB_ERROR_APPLICATION_SPECIFIC_ERROR);
+    }
+
+    char *np2_b = base64_url_encode(data->np, 32, &base64_len);
+
+    cJSON *ret_np2 = cJSON_CreateString(np2_b);
+    cJSON_AddItemToObject(ret_json, "Np2", ret_np2);
+
+    cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(EAP_NOOB_MSG_TYPE_RECONNECT_ECHDE_EXCHANGE));
+    cJSON_AddItemToObject(ret_json, "PeerId", cJSON_CreateStringReference(data->peer_id));
+
+    //<editor-fold desc="Build response wpabuf packet">
+    char *return_json = cJSON_PrintUnformatted(ret_json);
+    cJSON_Delete(ret_json);
+    size_t payload_len = strlen(return_json);
+    struct wpabuf *to_return = eap_msg_alloc(EAP_VENDOR_IETF, EAP_TYPE_NOOB, payload_len, EAP_CODE_RESPONSE, eap_get_id(reqData));
+    wpabuf_put_data(to_return, return_json, payload_len);
+    os_free(return_json);
+    //</editor-fold>
+
+    data->internal_state = EAP_NOOB_STATE_INTERNAL_RECONNECT_PUBKEY_SENT;
+    return to_return;
 }
 
 static struct wpabuf *eap_noob_handle_type_9(struct eap_sm *sm, struct eap_noob_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, cJSON *json)
@@ -1156,8 +1272,85 @@ static struct wpabuf *eap_noob_handle_type_9(struct eap_sm *sm, struct eap_noob_
     }
 
     cJSON *parsed_macs2 = cJSON_GetObjectItemCaseSensitive(json, "MACs2");
+    if (!cJSON_IsString(parsed_macs2)) {
+        wpa_printf(MSG_INFO, "EAP-NOOB: MACs2 was not a string");
+        return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
+    }
+    size_t b64_len;
+    u8 *macs2 = base64_url_decode(parsed_macs2->valuestring, strlen(parsed_macs2->valuestring), &b64_len);
+    if (b64_len != 32) {
+        os_free(macs2);
+        wpa_printf(MSG_INFO, "EAP-NOOB: MACs2 was not 32 bytes long");
+        return build_error_msg(reqData, EAP_NOOB_ERROR_INVALID_MESSAGE_STRUCTURE);
+    }
     //</editor-fold>
-    return NULL;
+
+
+    // This is now the tricky part, where we have to find out, if we have to update our persistent state.
+
+    // First, we compute and compare the MACs2 value based on Kz.
+    data->cryptokeys = eap_noob_calculate_cryptographic_elements(data, data->keyingmode, g_wpa_eap_noob_state.kz);
+    u8 mac_check = cryptographic_secure_compare(macs2, data->cryptokeys->macs, 32);
+
+    // If the MACs2 value computed with Kz we have to flush the KzPrev (if there was any).
+    if (mac_check == 0) {
+        if (g_wpa_eap_noob_state.prev_active) {
+            eap_noob_flush_persistent_kz_prev();
+            data->persistent_state_updated = true;
+        }
+    } else {
+        // If the MACs2 value computed with Kz did not match, we have to recompute the MAC values using KzPrev, if it exists.
+        // We check for the negative case first, in this case we can send an error immediately
+        if (!g_wpa_eap_noob_state.prev_active) {
+            wpa_printf(MSG_INFO, "EAP-NOOB: MACs2 did not match");
+            return build_error_msg(reqData, EAP_NOOB_ERROR_HMAC_VERIFICATION_FAILURE);
+        }
+
+        // Then we recalculate the keying material and compare the MACs2 value against that.
+        os_free(data->cryptokeys);
+        data->cryptokeys = eap_noob_calculate_cryptographic_elements(data, data->keyingmode, g_wpa_eap_noob_state.kz_prev);
+        mac_check = cryptographic_secure_compare(macs2, data->cryptokeys->macs, 32);
+
+        // If it didn't match too, then we can return an error.
+        if (mac_check != 0) {
+            wpa_printf(MSG_INFO, "EAP-NOOB: MACs2 with Kz and KzPrev did not match");
+            return build_error_msg(reqData, EAP_NOOB_ERROR_HMAC_VERIFICATION_FAILURE);
+        }
+
+        // In this case we rollback
+        eap_noob_rollback_persistent_kz_prev();
+        data->persistent_state_updated = true;
+    }
+
+    // At this point we can build the response to the server
+
+    char *macp_base64 = base64_url_encode(data->cryptokeys->macp, 32, &b64_len);
+
+    cJSON *ret_json = cJSON_CreateObject();
+    cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(EAP_NOOB_MSG_TYPE_RECONNECT_AUTHENTICATION));
+    cJSON_AddItemToObject(ret_json, "PeerId", cJSON_CreateStringReference(data->peer_id));
+    cJSON_AddItemToObject(ret_json, "MACp2", cJSON_CreateString(macp_base64));
+
+    //<editor-fold desc="Build response wpabuf packet">
+    char *return_json = cJSON_PrintUnformatted(ret_json);
+    cJSON_Delete(ret_json);
+    size_t payload_len = strlen(return_json);
+    struct wpabuf *to_return = eap_msg_alloc(EAP_VENDOR_IETF, EAP_TYPE_NOOB, payload_len, EAP_CODE_RESPONSE, eap_get_id(reqData));
+    wpabuf_put_data(to_return, return_json, payload_len);
+    os_free(return_json);
+    //</editor-fold>
+
+    data->internal_state = EAP_NOOB_STATE_INTERNAL_MACP_SENT;
+
+    // After we have build our response, we have to update the persistent storage, if we are in the cryptosuite upgrade exchange.
+    if (data->keyingmode == EAP_NOOB_KEYINGMODE_RECONNECT_CRYPTOSUITE_UPDATE) {
+        eap_noob_update_persistent_state(data, data->cryptokeys->kdf_out + 288);
+        data->persistent_state_updated = true;
+    }
+
+    // TODO At this point we should use a callback function to let the overlaying application know to update the persistent state it saves to persistent storage.
+
+    return to_return;
 }
 
 static void eap_noob_deinit(struct eap_sm *sm, void *priv);
@@ -1175,6 +1368,8 @@ static void *eap_noob_init(struct eap_sm *sm)
         return NULL;
     }
 
+    data->keyingmode = 0;
+    data->persistent_state_updated = false;
     data->internal_state = EAP_NOOB_STATE_INTERNAL_IDENTITY_SENT;
 
     // Get the NAI from the anonymous identity
@@ -1277,9 +1472,6 @@ static void eap_noob_deinit(struct eap_sm *sm, void *priv)
 
     if (data->cryptokeys != NULL) {
         os_free(data->cryptokeys);
-    }
-    if (data->cryptokeys2 != NULL) {
-        os_free(data->cryptokeys2);
     }
 
     // Caution: used_oob_msg is not freed, since this is simply a reference

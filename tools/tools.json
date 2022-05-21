@@ -76,6 +76,50 @@
       ]
     },
     {
+      "description": "LLVM for Xtensa (ESP32-S2) based on GCC",
+      "export_paths": [
+        [
+          "xtensa-esp32-elf-clang",
+          "bin"
+        ]
+      ],
+      "export_vars": {},
+      "info_url": "https://github.com/espressif/crosstool-NG",
+      "install": "on_request",
+      "license": "Apache-2.0",
+      "name": "xtensa-esp32-elf-clang",
+      "supported_targets": [
+        "esp32",
+        "esp32s2"
+      ],
+      "version_cmd": [
+        "llvm-config",
+        "--version"
+      ],
+      "version_regex": "([0-9\\.]+)",
+      "versions": [
+        {
+          "linux-amd64": {
+            "sha256": "b0148627912dacf4a4cab4596ba9467cb8dd771522ca27b9526bc57b88ff366f",
+            "size": 125101504,
+            "url": "https://github.com/espressif/llvm-project/releases/download/esp-14.0.0-20220415/xtensa-esp32-elf-llvm14_0_0-esp-14.0.0-20220415-linux-amd64.tar.xz"
+          },
+          "macos": {
+            "sha256": "1a78c598825ef168c0c5668aff7848825a7b9d014bffd1f2f2484ceea9df3841",
+            "size": 107100188,
+            "url": "https://github.com/espressif/llvm-project/releases/download/esp-14.0.0-20220415/xtensa-esp32-elf-llvm14_0_0-esp-14.0.0-20220415-macos.tar.xz"
+          },
+          "name": "14.0.0",
+          "status": "recommended",
+          "win64": {
+            "sha256": "793e7bd9c40fcb9a4fababaaccf3e4c5b8d9554d406af1b1fbee51806bf8c5dd",
+            "size": 174294128,
+            "url": "https://github.com/espressif/llvm-project/releases/download/esp-14.0.0-20220415/xtensa-esp32-elf-llvm14_0_0-esp-14.0.0-20220415-win64.zip"
+          }
+        }
+      ]
+    },
+    {
       "description": "GDB for RISC-V",
       "export_paths": [
         [

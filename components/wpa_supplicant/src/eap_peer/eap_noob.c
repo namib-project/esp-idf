@@ -2,6 +2,8 @@
  * EAP server/peer: EAP-NOOB (RFC 9140)
  */
 
+#define DEBUG_PRINT
+
 #include "utils/includes.h"
 #include "utils/common.h"
 #include "eap_peer/eap_i.h"
@@ -546,6 +548,9 @@ static void eap_noob_calculate_kdf(u8 *out, size_t len, u8 *z, size_t z_len, u8 
     memcpy(kdf_input + 4 + z_len + 8 + 32, party_v_info, 32);
     memcpy(kdf_input + 4 + z_len + 8 + 64, supp_priv_info, supp_priv_info_len);
 
+    wpa_hexdump_ascii(MSG_INFO, "EAP-NOOB: KDF Input", kdf_input + 4, z_len + 8 + 64 + supp_priv_info_len);
+
+
     size_t cur_ptr = 0;
     u32 id = 1;
     u8 kdf_out[32];
@@ -570,7 +575,9 @@ static void eap_noob_calculate_kdf(u8 *out, size_t len, u8 *z, size_t z_len, u8 
 
 static struct eap_noob_cryptographic_material *eap_noob_calculate_cryptographic_elements(struct eap_noob_data *data, int keyingmode, u8 *kz)
 {
+    wpa_printf(MSG_INFO, "EAP-NOOB: Starting calculation of cryptographic keys");
     if (keyingmode != EAP_NOOB_KEYINGMODE_COMPLETION && kz == NULL) {
+        wpa_printf(MSG_INFO, "EAP-NOOB: Error in crypto calculation");
         return NULL;
     }
 
@@ -628,6 +635,10 @@ static struct eap_noob_cryptographic_material *eap_noob_calculate_cryptographic_
         os_free(hash_base_string);
     }
 
+    wpa_printf(MSG_INFO, "EAP-NOOB: MACs input: %s", kms_input);
+    wpa_printf(MSG_INFO, "EAP-NOOB: MACp input: %s", kmp_input);
+    wpa_hexdump_ascii(MSG_INFO, "EAP-NOOB: MACs input", (u8 *)kms_input, km_input_len);
+    wpa_hexdump_ascii(MSG_INFO, "EAP-NOOB: MACp input", (u8 *)kmp_input, km_input_len);
 
     mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), to_return->kdf_out + 224, 32, (u8 *)kms_input, km_input_len, to_return->macs);
     mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), to_return->kdf_out + 256, 32, (u8 *)kmp_input, km_input_len, to_return->macp);

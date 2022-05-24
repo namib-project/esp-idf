@@ -610,12 +610,23 @@ static struct eap_noob_cryptographic_material *eap_noob_calculate_cryptographic_
     // Kmp: 256-287
     // Kz: 288-319 (only Completion/reconnect with version negotiation)
 
-    size_t km_input_len = strlen(g_wpa_eap_noob_state.ephemeral_state->hash_base_string) + 3 + strlen(noob_j);
+    char *hash_base_string;
+    if (keyingmode == EAP_NOOB_KEYINGMODE_COMPLETION) {
+        hash_base_string = g_wpa_eap_noob_state.ephemeral_state->hash_base_string;
+    } else {
+        hash_base_string = generate_hash_base(data, keyingmode);
+    }
+
+    size_t km_input_len = strlen(hash_base_string) + 3 + strlen(noob_j);
     char *kms_input = os_zalloc(km_input_len + 1);
     char *kmp_input = os_zalloc(km_input_len + 1);
 
-    snprintf(kms_input, km_input_len + 1, "[2%s%s]", g_wpa_eap_noob_state.ephemeral_state->hash_base_string, noob_j);
-    snprintf(kmp_input, km_input_len + 1, "[1%s%s]", g_wpa_eap_noob_state.ephemeral_state->hash_base_string, noob_j);
+    snprintf(kms_input, km_input_len + 1, "[2%s%s]", hash_base_string, noob_j);
+    snprintf(kmp_input, km_input_len + 1, "[1%s%s]", hash_base_string, noob_j);
+
+    if (keyingmode != EAP_NOOB_KEYINGMODE_COMPLETION) {
+        os_free(hash_base_string);
+    }
 
 
     mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), to_return->kdf_out + 224, 32, (u8 *)kms_input, km_input_len, to_return->macs);
@@ -1130,9 +1141,7 @@ static struct wpabuf *eap_noob_handle_type_7(struct eap_sm *sm, struct eap_noob_
 
     cJSON *parsed_serverinfo = cJSON_GetObjectItemCaseSensitive(json, "ServerInfo");
     if (parsed_serverinfo == NULL) {
-        cJSON *emptystring = cJSON_CreateString("");
-        data->server_info = cJSON_PrintUnformatted(emptystring);
-        cJSON_Delete(emptystring);
+        data->server_info = NULL;
     } else {
         if (!cJSON_IsObject(parsed_serverinfo)) {
             wpa_printf(MSG_INFO, "EAP-NOOB: ServerInfo was not a JSON Object");
@@ -1189,9 +1198,7 @@ static struct wpabuf *eap_noob_handle_type_8(struct eap_sm *sm, struct eap_noob_
 
     cJSON *parsed_pks2 = cJSON_GetObjectItemCaseSensitive(json, "PKs2");
     if (parsed_pks2 == NULL) {
-        cJSON *emptystring = cJSON_CreateString("");
-        data->pks = cJSON_PrintUnformatted(emptystring);
-        cJSON_Delete(emptystring);
+        data->pks = NULL;
     } else {
         if (!cJSON_IsObject(parsed_pks2)) {
             wpa_printf(MSG_INFO, "EAP-NOOB: PKs2 was not an Object");
@@ -1244,6 +1251,7 @@ static struct wpabuf *eap_noob_handle_type_8(struct eap_sm *sm, struct eap_noob_
     char *np2_b = base64_url_encode(data->np, 32, &base64_len);
 
     cJSON *ret_np2 = cJSON_CreateString(np2_b);
+    data->np_b = cJSON_PrintUnformatted(ret_np2);
     cJSON_AddItemToObject(ret_json, "Np2", ret_np2);
 
     cJSON_AddItemToObject(ret_json, "Type", cJSON_CreateNumber(EAP_NOOB_MSG_TYPE_RECONNECT_ECHDE_EXCHANGE));

@@ -1202,3 +1202,8 @@ esp_err_t esp_wifi_sta_wpa2_use_default_cert_bundle(bool use_default_bundle)
     return ESP_FAIL;
 #endif
 }
+
+esp_err_t esp_wifi_sta_wpa2_ent_eap_ute_set_initial_association(void)
+{
+    return ESP_OK;
+}

@@ -1,3 +1,8 @@
+/*
+ * SPDX-FileCopyrightText: 2022 Janfred
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 /* WiFi Connection Example using WPA2 Enterprise using EAP-NOOB
  */
 
@@ -56,9 +61,8 @@ static void initialize_wifi(void)
     ESP_LOGI(TAG, "Setting WiFi configuration SSID %s...", wifi_config.sta.ssid);
     ESP_ERROR_CHECK( esp_wifi_set_mode(WIFI_MODE_STA) );
     ESP_ERROR_CHECK( esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
-    ESP_ERROR_CHECK( esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)"noob@eap-noob.arpa", strlen("noob@eap-noob.arpa")) );
-    ESP_ERROR_CHECK( esp_wifi_sta_wpa2_ent_eap_noob_set_initial_association() );
-    ESP_ERROR_CHECK( esp_wifi_sta_wpa2_ent_eap_noob_set_oob_dir(EAP_NOOB_OOB_DIRECTION_BOTH));
+    ESP_ERROR_CHECK( esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)"initial@eap-ute.arpa", strlen("initial@eap-ute.arpa")) );
+    ESP_ERROR_CHECK( esp_wifi_sta_wpa2_ent_eap_ute_set_initial_association() );
     ESP_ERROR_CHECK( esp_wifi_sta_wpa2_ent_enable() );
     ESP_ERROR_CHECK( esp_wifi_start() );
 }
@@ -71,7 +75,7 @@ static void wpa2_enterprise_example_task(void *pvParameters)
 
     while (1) {
         vTaskDelay(2000 / portTICK_PERIOD_MS);
-
+/**
         if( esp_wifi_sta_wpa2_ent_eap_noob_oob_pending() ){
             eap_noob_oob_msg_t *oobmsg = esp_wifi_sta_wpa2_ent_eap_noob_generate_oob_message();
             char *hoob_str = malloc(33);
@@ -91,7 +95,7 @@ static void wpa2_enterprise_example_task(void *pvParameters)
             ESP_LOGI(TAG, "NoobId: %s", noobid_str);
             ESP_LOGI(TAG, "PeerId: %s", esp_wifi_sta_wpa2_ent_eap_noob_get_peerid());
         }
-
+*/
         if (esp_netif_get_ip_info(sta_netif, &ip) == 0) {
             ESP_LOGI(TAG, "~~~~~~~~~~~");
             ESP_LOGI(TAG, "IP:"IPSTR, IP2STR(&ip.ip));
@@ -102,10 +106,11 @@ static void wpa2_enterprise_example_task(void *pvParameters)
     }
 }
 
-void app_main(void)
+int app_main(void)
 {
     esp_log_level_set("*", ESP_LOG_VERBOSE);
     ESP_ERROR_CHECK( nvs_flash_init() );
     initialize_wifi();
     xTaskCreate(&wpa2_enterprise_example_task, "wpa2_enterprise_example_task", 4096, NULL, 5, NULL);
+    return 0;
 }

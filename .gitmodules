@@ -49,7 +49,8 @@
 
 [submodule "components/lwip/lwip"]
 	path = components/lwip/lwip
-	url = ../../espressif/esp-lwip.git
+	url = ../../namib-project/esp-lwip.git
+	branch = mud-support
 
 [submodule "components/mqtt/esp-mqtt"]
 	path = components/mqtt/esp-mqtt

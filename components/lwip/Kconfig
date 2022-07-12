@@ -287,7 +287,6 @@ menu "LWIP"
 
         config LWIP_DHCP_MUD_URL
             bool "Emit MUD URL (RFC 8520) via DHCP."
-            int "Maximum number of NTP servers aquired via DHCP"
             default n
             help
                 If enabled, LWIP will add a MUD-URL Option to DHCP-requests.

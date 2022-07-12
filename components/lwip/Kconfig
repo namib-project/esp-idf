@@ -283,6 +283,22 @@ menu "LWIP"
             options and values. If your code meets LWIP_ASSERT due to option value is too long.
             Please increase the LWIP_DHCP_OPTIONS_LEN value.
 
+    menu "DHCP client"
+
+        config LWIP_DHCP_MUD_URL
+            bool Emit MUD URL (RFC 8520) via DHCP.
+            int "Maximum number of NTP servers aquired via DHCP"
+            default n
+            help
+                If enabled, LWIP will add a MUD-URL Option to DHCP-requests.
+
+        config LWIP_MUD_URL_STRING
+            string "MUD URL"
+            default 'https://example.org'
+            depends on LWIP_DHCP_MUD_URL
+            help
+                Sets the MUD URL that is supposed to be emitted via DHCP.
+
     menu "DHCP server"
 
         config LWIP_DHCPS

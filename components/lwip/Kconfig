@@ -298,6 +298,8 @@ menu "LWIP"
             help
                 Sets the MUD URL that is supposed to be emitted via DHCP.
 
+    endmenu # DHCPC
+
     menu "DHCP server"
 
         config LWIP_DHCPS

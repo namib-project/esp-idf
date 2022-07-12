@@ -254,6 +254,16 @@
  */
 #define ESP_DHCP_DISABLE_VENDOR_CLASS_IDENTIFIER       CONFIG_LWIP_DHCP_DISABLE_VENDOR_CLASS_ID
 
+/**
+ * LWIP_DHCP_MUD_URL == 1: Emit MUD URL (RFC 8520) via DHCP.
+ */
+#define LWIP_DHCP_MUD_URL               CONFIG_LWIP_DHCP_MUD_URL
+
+/**
+ * CONFIG_LWIP_MUD_URL_STRING: The MUD URL that is emitted via DHCP. Must have the URL scheme https://.
+ */
+#define LWIP_MUD_URL_STRING             CONFIG_LWIP_MUD_URL_STRING
+
 /*
    ------------------------------------
    ---------- AUTOIP options ----------

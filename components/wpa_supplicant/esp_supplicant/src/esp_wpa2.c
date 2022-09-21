@@ -1205,25 +1205,61 @@ esp_err_t esp_wifi_sta_wpa2_use_default_cert_bundle(bool use_default_bundle)
 
 esp_err_t esp_wifi_sta_wpa2_ent_eap_ute_set_initial_association(void)
 {
+    g_wpa_eap_ute_state.ephemeral_state = NULL;
+    g_wpa_eap_ute_state.active = true;
+    g_wpa_eap_ute_state.persistent = false;
+    g_wpa_eap_ute_state.ute_state = EAP_UTE_STATE_UNREGISTERED;
+
+    // TODO: supported direction should be passed to this function instead of forcing it here.
+    g_wpa_eap_ute_state.supported_dir = EAP_UTE_OOB_DIRECTION_PEER_TO_SERVER;
     return ESP_OK;
 }
-esp_err_t esp_wifi_sta_wpa2_ent_eap_ute_set_persistent_association(void){
+
+esp_err_t esp_wifi_sta_wpa2_ent_eap_ute_set_persistent_association(void)
+{
     return ESP_OK;
 }
-esp_eap_ute_oob_msg_t *esp_wifi_sta_wpa2_ent_eap_ute_generate_oob_msg(void) {
+
+esp_eap_ute_oob_msg_t *esp_wifi_sta_wpa2_ent_eap_ute_generate_oob_msg(void)
+{
     return eap_ute_generate_oob_msg();
 }
-esp_err_t esp_wifi_sta_wpa2_ent_eap_ute_receive_oob_msg(unsigned char *nonce, unsigned char *auth){
-    if(g_wpa_eap_ute_state.ute_state == EAP_UTE_STATE_UNREGISTERED &&
-    g_wpa_eap_ute_state.ute_state == EAP_UTE_STATE_REGISTERED) {
+
+uint8_t *esp_wifi_sta_wpa2_ent_eap_ute_get_peerid(void)
+{
+    if (g_wpa_eap_ute_state.ute_state == EAP_UTE_STATE_UNREGISTERED) {
+        return NULL;
+    }
+    size_t size = sizeof(g_wpa_eap_ute_state.peerid);
+    uint8_t *to_return = malloc(size);
+    memcpy(to_return, g_wpa_eap_ute_state.peerid, size);
+    return to_return;
+}
+
+esp_err_t esp_wifi_sta_wpa2_ent_eap_ute_receive_oob_msg(unsigned char *nonce, unsigned char *auth)
+{
+    if (g_wpa_eap_ute_state.ute_state == EAP_UTE_STATE_UNREGISTERED &&
+            g_wpa_eap_ute_state.ute_state == EAP_UTE_STATE_REGISTERED) {
         return ESP_ERR_INVALID_STATE;
     }
     esp_eap_ute_oob_msg_t *oobmsg = os_zalloc(sizeof(esp_eap_ute_oob_msg_t));
     memcpy(oobmsg->nonce, nonce, 16);
     memcpy(oobmsg->auth, auth, 16);
-    if(eap_ute_receive_oob_msg(oobmsg)){
+    if (eap_ute_receive_oob_msg(oobmsg)) {
         return ESP_OK;
     }
     os_free(oobmsg);
     return ESP_FAIL;
+}
+
+bool esp_wifi_sta_wpa2_ent_eap_ute_oob_pending(void)
+{
+    if (g_wpa_eap_ute_state.ute_state != EAP_UTE_STATE_WAITING_FOR_OOB) {
+        return false;
+    }
+    if (g_wpa_eap_ute_state.ephemeral_state == NULL) {
+        return false;
+    }
+
+    return g_wpa_eap_ute_state.ephemeral_state->oobMessages == NULL;
 }

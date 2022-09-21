@@ -26,7 +26,7 @@ const int CONNECTED_BIT = BIT0;
 
 static const char *TAG = "example";
 
-static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
+static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
@@ -75,27 +75,39 @@ static void wpa2_enterprise_example_task(void *pvParameters)
 
     while (1) {
         vTaskDelay(2000 / portTICK_PERIOD_MS);
-/**
-        if( esp_wifi_sta_wpa2_ent_eap_noob_oob_pending() ){
-            eap_noob_oob_msg_t *oobmsg = esp_wifi_sta_wpa2_ent_eap_noob_generate_oob_message();
-            char *hoob_str = malloc(33);
-            char *noob_str = malloc(33);
-            char *noobid_str = malloc(33);
 
-            for(int i = 0;i<16; i++) {
-                snprintf(hoob_str + i * 2, 3, "%02x", oobmsg->hoob[i]);
-                snprintf(noob_str + i*2, 3, "%02x", oobmsg->noob[i]);
-                snprintf(noobid_str + i*2, 3, "%02x", oobmsg->noob_id[i]);
+        if ( esp_wifi_sta_wpa2_ent_eap_ute_oob_pending() ) {
+            esp_eap_ute_oob_msg_t *oobmsg = esp_wifi_sta_wpa2_ent_eap_ute_generate_oob_msg();
+            char *auth_str = malloc(65);
+            char *nonce_str = malloc(65);
+            char *oobid_str = malloc(33);
+            char *peeridstr = malloc(33);
+            uint8_t *peerid = esp_wifi_sta_wpa2_ent_eap_ute_get_peerid();
+
+            for (int i = 0; i < 32; i++) {
+                snprintf(auth_str + i * 2, 3, "%02x", oobmsg->auth[i]);
+                snprintf(nonce_str + i * 2, 3, "%02x", oobmsg->nonce[i]);
+            }
+            for (int i = 0; i < 16; i++) {
+                snprintf(oobid_str + i * 2, 3, "%02x", oobmsg->oob_id[i]);
+                snprintf(peeridstr + i * 2, 3, "%02x", peerid[i]);
             }
 
 
+
             ESP_LOGI(TAG, "OOBMsg");
-            ESP_LOGI(TAG, "Hoob: %s", hoob_str);
-            ESP_LOGI(TAG, "Noob: %s", noob_str);
-            ESP_LOGI(TAG, "NoobId: %s", noobid_str);
-            ESP_LOGI(TAG, "PeerId: %s", esp_wifi_sta_wpa2_ent_eap_noob_get_peerid());
+            ESP_LOGI(TAG, "Auth:  %s", auth_str);
+            ESP_LOGI(TAG, "Nonce: %s", nonce_str);
+            ESP_LOGI(TAG, "OOBId: %s", oobid_str);
+            ESP_LOGI(TAG, "PeerId: %s", peeridstr);
+
+            free(auth_str);
+            free(nonce_str);
+            free(oobid_str);
+            free(peeridstr);
+            free(peerid);
         }
-*/
+
         if (esp_netif_get_ip_info(sta_netif, &ip) == 0) {
             ESP_LOGI(TAG, "~~~~~~~~~~~");
             ESP_LOGI(TAG, "IP:"IPSTR, IP2STR(&ip.ip));

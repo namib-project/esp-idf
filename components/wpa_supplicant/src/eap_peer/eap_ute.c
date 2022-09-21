@@ -19,6 +19,8 @@
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/md.h"
 
+#define DEBUGLINE wpa_printf(MSG_INFO, "EAP-UTE: Line %d", __LINE__);
+
 struct eap_ute_state g_wpa_eap_ute_state;
 
 enum eap_ute_error_codes {
@@ -84,6 +86,7 @@ struct eap_ute_data {
     enum eap_ute_exchange_type exch_type;
     u8 *kdf_out;
     size_t kdf_out_len;
+    u8 peerid[16];
     u8 nonce_peer[32];
     u8 nonce_server[32];
     u8 *shared_key;
@@ -119,8 +122,8 @@ static void eap_ute_calculate_kdf(struct eap_ute_data *data, int keying_mode, es
     }
 
     data->kdf_out = malloc(data->kdf_out_len);
-
-    size_t kdf_input_size = 71;
+    //                      ID  NP   NS  EAP-UTE
+    size_t kdf_input_size = 4 + 32 + 32 + 7;
     if (keying_mode == 0 || keying_mode == 2 || keying_mode == 3) {
         kdf_input_size += data->shared_key_length; // Z is ECDHE shared secret
     } else {
@@ -166,6 +169,8 @@ static void eap_ute_calculate_kdf(struct eap_ute_data *data, int keying_mode, es
         cur_ptr += 32;
     }
 
+    wpa_hexdump(MSG_INFO, "EAP-UTE: KDF Input:", kdf_input + 4, kdf_input_size - 4);
+
     cur_ptr = 0;
     u32 id = 1;
     u8 kdf_out[32];
@@ -174,6 +179,8 @@ static void eap_ute_calculate_kdf(struct eap_ute_data *data, int keying_mode, es
         kdf_input[1] = id >> 16;
         kdf_input[2] = id >> 8;
         kdf_input[3] = id;
+
+        id++;
 
         mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), kdf_input, kdf_input_size, kdf_out);
 
@@ -224,9 +231,17 @@ static void eap_ute_calculate_crypto_material(struct eap_ute_data *data, int key
         mbedtls_md_free( &md );
     }
     mac_input[0] = EAP_UTE_OOB_DIRECTION_SERVER_TO_PEER;
+    wpa_hexdump(MSG_INFO, "EAP-UTE: MAC Server Key:", data->kdf_out + 224, 32);
+    wpa_hexdump(MSG_INFO, "EAP-UTE: MAC Server Input:", mac_input, cur_pos);
     mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), data->kdf_out + 224, 32, mac_input, cur_pos, data->mac_s);
+    wpa_hexdump(MSG_INFO, "EAP-UTE: MAC Server", data->mac_s, 32);
+
     mac_input[0] = EAP_UTE_OOB_DIRECTION_PEER_TO_SERVER;
+    wpa_hexdump(MSG_INFO, "EAP-UTE: MAC Peer Key:", data->kdf_out + 256, 32);
+    wpa_hexdump(MSG_INFO, "EAP-UTE: MAC Peer Input:", mac_input, cur_pos);
     mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), data->kdf_out + 256, 32, mac_input, cur_pos, data->mac_p);
+    wpa_hexdump(MSG_INFO, "EAP-UTE: MAC Peer  ", data->mac_p, 32);
+
     free(mac_input);
 }
 /**
@@ -296,6 +311,17 @@ esp_eap_ute_oob_msg_t *eap_ute_generate_oob_msg(void)
     oobMsg->oob_dir = EAP_UTE_OOB_DIRECTION_PEER_TO_SERVER;
 
     eap_ute_calculate_oob_auth(oobMsg);
+
+    u8 tmp_id[32];
+    mbedtls_md_context_t auth_ctx;
+    mbedtls_md_init( &auth_ctx);
+    mbedtls_md_setup(&auth_ctx, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 0);
+    mbedtls_md_update(&auth_ctx, (unsigned char *)"OOB-Id", strlen("OOB-Id"));
+    mbedtls_md_update(&auth_ctx, oobMsg->auth, 32);
+    mbedtls_md_finish(&auth_ctx, tmp_id);
+    mbedtls_md_free(&auth_ctx);
+
+    memcpy( oobMsg->oob_id, tmp_id, 16);
 
     if (eph->oobMessages == NULL) {
         eph->oobMessages = oobMsgNode;
@@ -381,52 +407,62 @@ bool eap_ute_receive_oob_msg(esp_eap_ute_oob_msg_t *oobMsg)
 
 static void eap_ute_free_ephemeral_state()
 {
+    DEBUGLINE
     if (g_wpa_eap_ute_state.ephemeral_state == NULL) {
         return;
     }
-
+    DEBUGLINE
     struct eap_ute_ephemeral_state_info *eph = g_wpa_eap_ute_state.ephemeral_state;
     if (eph->ecdhe_shared_secret != NULL && eph->ecdhe_shared_secret_length != 0) {
         free(eph->ecdhe_shared_secret);
     }
-
+    DEBUGLINE
     esp_eap_ute_oob_msg_node_t *cur = eph->oobMessages;
     esp_eap_ute_oob_msg_node_t *next;
-    while (cur->next != NULL) {
-        next = cur->next;
-        free(cur->value);
-        free(cur);
-        cur = next;
+    if (cur != NULL) {
+        while (cur->next != NULL) {
+            next = cur->next;
+            free(cur->value);
+            free(cur);
+            cur = next;
+        }
     }
-
+    DEBUGLINE
     mbedtls_md_free(&eph->hash_context);
-
+    DEBUGLINE
     free(eph);
-
+    DEBUGLINE
     g_wpa_eap_ute_state.ephemeral_state = NULL;
 }
 
 static void eap_ute_save_ephemeral_state(struct eap_ute_data *data)
 {
+    struct eap_ute_ephemeral_state_info *eph;
+    DEBUGLINE
+    wpa_printf(MSG_INFO, "EAP-UTE: Saving ephemeral state");
+    DEBUGLINE
     eap_ute_free_ephemeral_state();
-
-    g_wpa_eap_ute_state.ephemeral_state = os_zalloc(sizeof(struct eap_ute_ephemeral_state_info));
-    struct eap_ute_ephemeral_state_info *eph = g_wpa_eap_ute_state.ephemeral_state;
-
+    DEBUGLINE
+    eph = os_zalloc(sizeof(struct eap_ute_ephemeral_state_info));
+    g_wpa_eap_ute_state.ephemeral_state = eph;
+    DEBUGLINE
     if (data->shared_key != NULL) {
         eph->ecdhe_shared_secret = os_zalloc(data->shared_key_length);
         eph->ecdhe_shared_secret_length = data->shared_key_length;
         memcpy(eph->ecdhe_shared_secret, data->shared_key, data->shared_key_length);
     }
-
+    DEBUGLINE
     memcpy(eph->initial_hash, data->messages_hash, 32);
     memcpy(eph->nonce_peer, data->nonce_peer, 32);
     memcpy(eph->nonce_server, data->nonce_server, 32);
-
+    memcpy(g_wpa_eap_ute_state.peerid, data->peerid, 16);
+    DEBUGLINE
     mbedtls_md_init(&eph->hash_context);
     mbedtls_md_setup(&eph->hash_context, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 0);
-
+    DEBUGLINE
     mbedtls_md_clone(&eph->hash_context, &data->md_ctx);
+    DEBUGLINE
+    g_wpa_eap_ute_state.ute_state = EAP_UTE_STATE_WAITING_FOR_OOB;
 }
 
 static void *eap_ute_init(struct eap_sm *sm)
@@ -440,6 +476,16 @@ static void *eap_ute_init(struct eap_sm *sm)
     data->exch_type = EAP_UTE_EXCHANGE_TYPE_NONE;
     mbedtls_md_init(&data->md_ctx);
     mbedtls_md_setup(&data->md_ctx, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 0);
+
+    if (g_wpa_eap_ute_state.ute_state == EAP_UTE_STATE_WAITING_FOR_OOB ||
+            g_wpa_eap_ute_state.ute_state == EAP_UTE_STATE_OOB_RECEIVED) {
+        struct eap_ute_ephemeral_state_info *eph = g_wpa_eap_ute_state.ephemeral_state;
+
+        data->shared_key = os_zalloc(eph->ecdhe_shared_secret_length);
+        data->shared_key_length = eph->ecdhe_shared_secret_length;
+        memcpy(data->shared_key, eph->ecdhe_shared_secret, data->shared_key_length);
+    }
+
     return data;
 }
 
@@ -650,7 +696,7 @@ static struct wpabuf *eap_ute_send_client_greeting(struct eap_sm *sm, struct eap
     }
 
     // Build CBOR return values
-    u8 cbor_buf[1500];
+    u8 cbor_buf[500];
     CborEncoder encoder, mapEncoder, cipherEncoder, peerInfoEncoder, keyEncoder;
     cbor_encoder_init(&encoder, cbor_buf, sizeof(cbor_buf), 0);
     cbor_encoder_create_map(&encoder, &mapEncoder, 6);
@@ -693,7 +739,7 @@ static struct wpabuf *eap_ute_send_client_greeting(struct eap_sm *sm, struct eap
 
     size_t cbor_len = cbor_encoder_get_buffer_size(&encoder, cbor_buf);
 
-    u8 final_cbor[1500];
+    u8 final_cbor[500];
     cbor_encoder_init(&encoder, final_cbor, sizeof(final_cbor), 0);
     cbor_encode_int(&encoder, EAP_UTE_MSG_TYPE_CLIENT_GREETING);
     size_t prelude_len = cbor_encoder_get_buffer_size(&encoder, final_cbor);
@@ -726,7 +772,7 @@ static struct wpabuf *eap_ute_send_client_completion_request(struct eap_sm *sm, 
         data->oobMsg = eap_ute_check_for_usable_oob_msg();
     }
 
-    u8 cbor_buf[1500];
+    u8 cbor_buf[500];
     CborEncoder encoder, mapEncoder;
     cbor_encoder_init(&encoder, cbor_buf, sizeof(cbor_buf), 0);
     cbor_encoder_create_map(&encoder, &mapEncoder, data->oobMsg == NULL ? 2 : 3);
@@ -746,7 +792,7 @@ static struct wpabuf *eap_ute_send_client_completion_request(struct eap_sm *sm, 
 
     size_t cbor_len = cbor_encoder_get_buffer_size(&encoder, cbor_buf);
 
-    u8 final_cbor[1500];
+    u8 final_cbor[500];
     cbor_encoder_init(&encoder, final_cbor, sizeof(final_cbor), 0);
     cbor_encode_int(&encoder, EAP_UTE_MSG_TYPE_CLIENT_COMPLETION_REQUEST);
     size_t prelude_len = cbor_encoder_get_buffer_size(&encoder, final_cbor);
@@ -768,8 +814,8 @@ static struct wpabuf *eap_ute_send_client_completion_request(struct eap_sm *sm, 
 
 static struct wpabuf *eap_ute_send_client_finished(struct eap_sm *sm, struct eap_ute_data *data, struct eap_method_ret *ret, const struct wpabuf *reqData, bool include_mac)
 {
-    u8 cbor_buf[1500];
-    u8 additional_buf[1500];
+    u8 cbor_buf[500];
+    u8 additional_buf[500];
     size_t cbor_len;
     size_t additional_len = 0;
     CborEncoder encoder, mapEncoder;
@@ -795,7 +841,7 @@ static struct wpabuf *eap_ute_send_client_finished(struct eap_sm *sm, struct eap
         additional_len = cbor_encoder_get_buffer_size(&encoder, additional_buf);
     }
 
-    u8 final_cbor[1500];
+    u8 final_cbor[500];
     cbor_encoder_init(&encoder, final_cbor, sizeof(final_cbor), 0);
     cbor_encode_int(&encoder, EAP_UTE_MSG_TYPE_CLIENT_FINISHED);
     size_t prelude_len = cbor_encoder_get_buffer_size(&encoder, final_cbor);
@@ -812,6 +858,8 @@ static struct wpabuf *eap_ute_send_client_finished(struct eap_sm *sm, struct eap
 
     struct wpabuf *to_return = eap_msg_alloc(EAP_VENDOR_IETF, EAP_TYPE_UTE, prelude_len + cbor_len + additional_len, EAP_CODE_RESPONSE, eap_get_id(reqData));
     wpabuf_put_data(to_return, final_cbor, prelude_len + cbor_len + additional_len);
+
+    mbedtls_md_update(&data->md_ctx, final_cbor, prelude_len + cbor_len);
 
     u8 hash_out[32];
     mbedtls_md_context_t hash_final;
@@ -1004,17 +1052,20 @@ static struct wpabuf *eap_ute_handle_server_greeting(struct eap_sm *sm, struct e
         return build_error_msg(reqData, 0);
     }
 
+    wpa_printf(MSG_INFO, "EAP-UTE: Current state: %i", g_wpa_eap_ute_state.ute_state);
+
     // Depending on the current state, we send different messages
     switch (g_wpa_eap_ute_state.ute_state) {
     case EAP_UTE_STATE_UNREGISTERED:
+        wpa_printf(MSG_INFO, "EAP-UTE: Unregistered, executing client greeting");
         // Initial exchange, send Client Greeting
         return eap_ute_send_client_greeting(sm, data, ret, reqData);
     case EAP_UTE_STATE_WAITING_FOR_OOB:
     case EAP_UTE_STATE_OOB_RECEIVED:
         // Intentional Fallthrough
         // Waiting exchange, send Client Completion Request
+        wpa_printf(MSG_INFO, "EAP-UTE: Ephemeral state, executing client completion");
         return eap_ute_send_client_completion_request(sm, data, ret, reqData);
-        return NULL;
     case EAP_UTE_STATE_REGISTERED:
         // Reconnect exchange.
         // Depending on the chosen exchange (w. ecdhe, w/o ecdhe, upgrade)
@@ -1057,7 +1108,7 @@ static struct wpabuf *eap_ute_handle_server_keyshare(struct eap_sm *sm, struct e
     }
 
     int map_key;
-    uint8_t server_key_seen = 0, nonce_server_seen = 0;
+    uint8_t server_key_seen = 0, nonce_server_seen = 0, peerid_seen = 0;
     u8 serverkey[32];
 
     while (!cbor_value_at_end(&map_value)) {
@@ -1218,6 +1269,29 @@ static struct wpabuf *eap_ute_handle_server_keyshare(struct eap_sm *sm, struct e
                 wpa_printf(MSG_INFO, "EAP-UTE: Nonce size was not 32 bytes");
                 // todo correct error code
                 return build_error_msg(reqData, 0);
+            }
+            break;
+        case EAP_UTE_MAP_KEY_PEER_ID:
+            wpa_printf(MSG_INFO, "EAP-UTE: Seen Key for PeerId");
+            if (peerid_seen != 0) {
+                wpa_printf(MSG_INFO, "EAP-UTE: Double PeerId in cbor map");
+                return build_error_msg(reqData, EAP_UTE_ERROR_INVALID_MESSAGE_STRUCTURE);
+            }
+            peerid_seen = 1;
+            // TODO: Check if PeerId is expected here.
+            if (!cbor_value_is_byte_string(&map_value)) {
+                wpa_printf(MSG_INFO, "EAP-UTE: PeerId was not a byte string");
+                return build_error_msg(reqData, EAP_UTE_ERROR_INVALID_MESSAGE_STRUCTURE);
+            }
+            size_t peerid_size = 16;
+            err = cbor_value_copy_byte_string(&map_value, data->peerid, &peerid_size, NULL);
+            if (err != CborNoError) {
+                wpa_printf(MSG_INFO, "EAP-UTE: Error in getting PeerId");
+                return build_error_msg(reqData, EAP_UTE_ERROR_APPLICATION_SPECIFIC_ERROR);
+            }
+            if (peerid_size != 16) {
+                wpa_printf(MSG_INFO, "EAP-UTE: PeerId size was not exactly 16 bytes");
+                return build_error_msg(reqData, EAP_UTE_ERROR_INVALID_MESSAGE_STRUCTURE);
             }
             break;
         default:
@@ -1477,6 +1551,8 @@ static struct wpabuf *eap_ute_handle_server_completion_response(struct eap_sm *s
 
     // TODO:
     eap_ute_calculate_kdf(data, 0, data->oobMsg);
+
+    wpa_hexdump(MSG_INFO, "EAP-UTE: KDF output:", data->kdf_out, data->kdf_out_len);
 
     eap_ute_calculate_crypto_material(data, 0);
 

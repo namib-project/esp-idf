@@ -304,6 +304,9 @@ esp_eap_ute_oob_msg_t *esp_wifi_sta_wpa2_ent_eap_ute_generate_oob_msg(void);
  *     - ESP_ERR_INVALID_STATE: Invalid state for reception of OOB message
  */
 esp_err_t esp_wifi_sta_wpa2_ent_eap_ute_receive_oob_msg(unsigned char *nonce, unsigned char *auth);
+
+uint8_t *esp_wifi_sta_wpa2_ent_eap_ute_get_peerid(void);
+
 bool esp_wifi_sta_wpa2_ent_eap_ute_oob_pending(void);
 
 #ifdef __cplusplus

@@ -32,8 +32,9 @@ typedef struct {
 } esp_eap_fast_config;
 
 typedef struct esp_eap_ute_oob_msg {
-    unsigned char nonce[16];
-    unsigned char auth[16];
+    unsigned char nonce[32];
+    unsigned char auth[32];
+    unsigned char oob_id[16];
     esp_eap_ute_oob_direction oob_dir;
 } esp_eap_ute_oob_msg_t;
 
@@ -269,9 +270,39 @@ esp_err_t esp_wifi_sta_wpa2_ent_set_fast_phase1_params(esp_eap_fast_config confi
   */
 esp_err_t esp_wifi_sta_wpa2_use_default_cert_bundle(bool use_default_bundle);
 
+/**
+ * @brief Set initial values for the EAP-UTE association state
+ * @return
+ *    - ESP_OK: succeed
+ *    - ESP_FAIL: fail
+ */
 esp_err_t esp_wifi_sta_wpa2_ent_eap_ute_set_initial_association(void);
+/**
+ * @brief Set persistent values for the EAP-UTE association state
+ * @attention This method is not yet implemented.
+ * @return
+ *     - ESP_OK: succeed
+ *     - ESP_FAIL: fail
+ */
 esp_err_t esp_wifi_sta_wpa2_ent_eap_ute_set_persistent_association(void);
+/**
+ * @brief Generate an OOB-Message for the current EAP-UTE association
+ * @attention This method will only return a message if the EAP-UTE state machine is in the states
+ *   WAITING_FOR_OOB or OOB_RECEIVED.
+ * @return The OOB message if state machine is in a valid state for OOB-Step, NULL otherwise
+ */
 esp_eap_ute_oob_msg_t *esp_wifi_sta_wpa2_ent_eap_ute_generate_oob_msg(void);
+/**
+ * @brief Receive an EAP-UTE OOB message
+ * @attention This method can only function if the EAP-UTE state machine is in the states
+ *   WAITING_FOR_OOB or OOB_RECEIVED
+ * @param nonce 32 byte Out-Of-Band nonce
+ * @param auth 32 byte Out-Of-Band Auth value
+ * @return
+ *     - ESP_OK: OOB-Message was accepted.
+ *     - ESP_FAIL: OOB-Message Auth value was invalid
+ *     - ESP_ERR_INVALID_STATE: Invalid state for reception of OOB message
+ */
 esp_err_t esp_wifi_sta_wpa2_ent_eap_ute_receive_oob_msg(unsigned char *nonce, unsigned char *auth);
 bool esp_wifi_sta_wpa2_ent_eap_ute_oob_pending(void);
 

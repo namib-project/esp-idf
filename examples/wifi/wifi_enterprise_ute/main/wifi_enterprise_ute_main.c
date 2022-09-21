@@ -54,7 +54,7 @@ static void initialize_wifi(void)
 
     wifi_config_t wifi_config = {
         .sta = {
-            .ssid = "EAP-NOOB-Janfred"
+            .ssid = "eduroam"
         }
     };
 

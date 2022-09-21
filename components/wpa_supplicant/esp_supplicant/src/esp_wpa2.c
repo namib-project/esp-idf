@@ -1207,3 +1207,23 @@ esp_err_t esp_wifi_sta_wpa2_ent_eap_ute_set_initial_association(void)
 {
     return ESP_OK;
 }
+esp_err_t esp_wifi_sta_wpa2_ent_eap_ute_set_persistent_association(void){
+    return ESP_OK;
+}
+esp_eap_ute_oob_msg_t *esp_wifi_sta_wpa2_ent_eap_ute_generate_oob_msg(void) {
+    return eap_ute_generate_oob_msg();
+}
+esp_err_t esp_wifi_sta_wpa2_ent_eap_ute_receive_oob_msg(unsigned char *nonce, unsigned char *auth){
+    if(g_wpa_eap_ute_state.ute_state == EAP_UTE_STATE_UNREGISTERED &&
+    g_wpa_eap_ute_state.ute_state == EAP_UTE_STATE_REGISTERED) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    esp_eap_ute_oob_msg_t *oobmsg = os_zalloc(sizeof(esp_eap_ute_oob_msg_t));
+    memcpy(oobmsg->nonce, nonce, 16);
+    memcpy(oobmsg->auth, auth, 16);
+    if(eap_ute_receive_oob_msg(oobmsg)){
+        return ESP_OK;
+    }
+    os_free(oobmsg);
+    return ESP_FAIL;
+}
